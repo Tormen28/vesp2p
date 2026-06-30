@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const snapshots = await ScraperService.getHistory(limit)
 
     const chartData = snapshots.map((snap) => ({
-      time: Math.floor(snap.timestamp.getTime() / 1000),
+      time: Math.floor(new Date(snap.timestamp).getTime() / 1000),
       buyPrice: snap.buyPrice,
       sellPrice: snap.sellPrice,
       spread: snap.spread,
