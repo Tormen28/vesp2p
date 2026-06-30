@@ -241,7 +241,7 @@ export class BinanceService {
 
     const medianSell = sellStats.median
     const medianBuy = buyStats.median
-    const spread = medianSell - medianBuy
+    const spread = medianBuy - medianSell
 
     return {
       id: 0,

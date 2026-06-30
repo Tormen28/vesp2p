@@ -27,7 +27,7 @@ export function PriceCards({ sellData, buyData, isLoading }: PriceCardsProps) {
   const buyPrice = buyData
     ? parseFloat(buyData.priceStats.min.replace(/,/g, ""))
     : null
-  const spread = sellPrice && buyPrice ? sellPrice - buyPrice : null
+  const spread = sellPrice && buyPrice ? Math.abs(buyPrice - sellPrice) : null
 
   const calculateDelta = (current: number | null, previous: number | null): DeltaInfo | null => {
     if (current === null || previous === null || previous === 0) return null
