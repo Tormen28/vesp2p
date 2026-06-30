@@ -274,3 +274,51 @@ Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para má
 **¿Te gusta este proyecto?** ⭐ Dale una estrella en GitHub y compártelo con otros developers.
 
 **Desarrollado con ❤️ para la comunidad crypto de Bolivia**
+
+
+---
+
+## 🗄️ Setup Supabase
+
+1. Crear proyecto en [supabase.com](https://supabase.com).
+2. Ir a **Settings → Database → Connection string**.
+3. Copiar el **Transaction pooler** URL (puerto `6543`).
+4. Formato esperado:
+   ```
+   postgresql://postgres.[ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
+   ```
+5. Setear `DATABASE_URL` en el archivo `.env`.
+6. Generar un token seguro para el cron:
+   ```bash
+   openssl rand -hex 32
+   ```
+7. Setearlo como `CRON_SECRET` en `.env`.
+
+### Primera migración
+
+Con `DATABASE_URL` apuntando a Supabase:
+```bash
+npx prisma migrate deploy
+npx prisma generate
+```
+
+## ▲ Deploy en Vercel
+
+1. **Importar el repo** en [vercel.com](https://vercel.com).
+2. **Setear variables de entorno** en Project Settings → Environment Variables:
+   - `DATABASE_URL` (la misma de Supabase)
+   - `CRON_SECRET` (el mismo del `.env`)
+3. **Deploy.** Vercel detecta `vercel.json` y configura automáticamente un Cron Job que llama `GET /api/cron` cada 5 minutos (`*/5 * * * *`).
+4. **Verificar** que el cron quedó agendado: Vercel Dashboard → Project → Cron Jobs.
+
+### Backfill local
+
+Para guardar snapshots al instante en desarrollo local:
+```bash
+npm install
+npm run scraper
+```
+
+### Plan Hobby de Vercel
+
+Verifica el límite de cron jobs antes de deploy. Si `*/5 * * * *` no está disponible, alternativa: usar [cron-job.org](https://cron-job.org) externo configurado para pegarle a `https://<tu-app>.vercel.app/api/cron` cada 5 minutos con header `Authorization: Bearer ${CRON_SECRET}`.
