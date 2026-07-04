@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { supabaseRest } from "@/lib/supabase"
+import { getCloudflareContext } from "@opennextjs/cloudflare"
 
 export const dynamic = "force-dynamic"
 
@@ -24,16 +24,40 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const tradeType = searchParams.get("tradeType") || "SELL"
 
-    // Leer último snapshot de Supabase (poblado por GH Actions cada 5 min)
-    const rows = await supabaseRest<MarketSnapshotRow[]>("MarketSnapshot", {
+    const { env } = getCloudflareContext()
+    const SUPABASE_URL = env.SUPABASE_URL as string
+    const SUPABASE_SECRET_KEY = env.SUPABASE_SECRET_KEY as string
+
+    if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+      return NextResponse.json(
+        { error: "Missing env vars" },
+        { status: 500 }
+      )
+    }
+
+    // Leer último snapshot de Supabase
+    const url = new URL(`${SUPABASE_URL}/rest/v1/MarketSnapshot`)
+    url.searchParams.set("select", "*")
+    url.searchParams.set("order", "timestamp.desc")
+    url.searchParams.set("limit", "1")
+
+    const response = await fetch(url.toString(), {
       method: "GET",
-      query: {
-        select: "*",
-        order: "timestamp.desc",
-        limit: "1",
+      headers: {
+        apikey: SUPABASE_SECRET_KEY,
+        Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+        "Content-Type": "application/json",
       },
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     })
 
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "")
+      throw new Error(`Supabase REST error ${response.status}: ${errorText}`)
+    }
+
+    const rows = await response.json() as MarketSnapshotRow[]
     const snapshot = rows?.[0]
 
     if (!snapshot) {
@@ -47,7 +71,6 @@ export async function GET(request: Request) {
     const median = isBuy ? snapshot.medianBuy : snapshot.medianSell
     const q1 = isBuy ? snapshot.q1Buy : snapshot.q1Sell
     const q3 = isBuy ? snapshot.q3Buy : snapshot.q3Sell
-    const price = isBuy ? snapshot.buyPrice : snapshot.sellPrice
 
     return NextResponse.json({
       timestamp: snapshot.timestamp,
@@ -69,9 +92,10 @@ export async function GET(request: Request) {
       },
     })
   } catch (err: unknown) {
-    console.error("Error en /api/binance-p2p:", err instanceof Error ? err.message : String(err))
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error("Error en /api/binance-p2p:", msg)
     return NextResponse.json(
-      { error: "Error interno" },
+      { error: "Error interno", detail: msg },
       { status: 500 }
     )
   }

@@ -6,17 +6,35 @@ export interface SupabaseRestOptions {
   signal?: AbortSignal
 }
 
+export function getSupabaseEnv(): { url: string; key: string } {
+  // In Cloudflare Workers, use getCloudflareContext() for env bindings
+  // Falls back to process.env for local dev
+  try {
+    // Dynamic import to avoid issues in non-Cloudflare environments
+    const { getCloudflareContext } = require("@opennextjs/cloudflare")
+    const ctx = getCloudflareContext()
+    const url = ctx.env.SUPABASE_URL || process.env.SUPABASE_URL
+    const key = ctx.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SECRET_KEY
+    if (url && key) return { url, key }
+  } catch {
+    // Not in Cloudflare context, fall back to process.env
+  }
+
+  const url = process.env.SUPABASE_URL
+  const key = process.env.SUPABASE_SECRET_KEY
+  if (!url || !key) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars")
+  }
+  return { url, key }
+}
+
 export async function supabaseRest<T = unknown>(
   table: string,
   options: SupabaseRestOptions = {}
 ): Promise<T> {
   const { method = "GET", body, query, prefer, signal } = options
 
-  const SUPABASE_URL = process.env.SUPABASE_URL
-  const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY
-  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-    throw new Error("Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars")
-  }
+  const { url: SUPABASE_URL, key: SUPABASE_SECRET_KEY } = getSupabaseEnv()
 
   const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`)
   if (query) {
@@ -26,7 +44,7 @@ export async function supabaseRest<T = unknown>(
   }
 
   const headers: Record<string, string> = {
-    apikey: SUPABASE_SECRET_KEY!,
+    apikey: SUPABASE_SECRET_KEY,
     Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
     "Content-Type": "application/json",
   }

@@ -14,6 +14,9 @@
       "service": "vesp2p"
     }
   ],
+  "vars": {
+    "SUPABASE_URL": "https://evaxjsxrhmxoiqvmxxma.supabase.co"
+  },
   "observability": {
     "enabled": true
   }
