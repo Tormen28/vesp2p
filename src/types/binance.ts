@@ -2,47 +2,42 @@ export type TradeType = "SELL" | "BUY"
 
 export interface BinanceAdvertiser {
   nickName: string
-  userNo: string
   monthOrderCount: number
   monthFinishRate: number
   positiveRate: number
   userType: string
-  isVerified: boolean
-  proMerchant: boolean
-  avgReleaseTimeOfLatest30day: number
-}
-
-export interface BinanceAdv {
-  advNo: string
-  price: string
-  surplusAmount: string
-  minSingleTransAmount: string
-  maxSingleTransAmount: string
-  tradeMethods: { payType: string }[]
+  merchantGroupMember: boolean
 }
 
 export interface BinanceAd {
+  adNo: string
+  price: number
+  fiat: string
+  asset: string
+  minTransAmount: number
+  maxTransAmount: number
+  tradableAmount: number
+  payTimeLimit: number
+  tradeMethods: string[]
   advertiser: BinanceAdvertiser
-  adv: BinanceAdv
 }
 
 export interface BinanceResponse {
   code: string
   message: null
   messageDetail: null
-  data: BinanceAd[]
+  data: { items: BinanceAd[] }
+  success: boolean
 }
 
 export interface ProcessedAdvertisement {
   advertiser: {
     nickName: string
-    userNo: string
     monthOrderCount: number
     monthFinishRate: number
     positiveRate: number
     userType: string
     isVerified: boolean
-    proMerchant: boolean
   }
   price: number
   available: number
@@ -79,5 +74,3 @@ export interface P2PData {
   advertisements: ProcessedAdvertisement[]
   filterInfo: FilterInfo
 }
-
-

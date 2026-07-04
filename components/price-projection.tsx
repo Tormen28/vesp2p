@@ -30,7 +30,7 @@ interface PriceProjectionProps {
 // Tipo de precio base para las proyecciones
 type PriceBaseType = "min" | "avg" | "max"
 
-export function PriceProjection({ advertisements, tradeType, isLoading }: PriceProjectionProps) {
+export function PriceProjection({ advertisements = [], tradeType, isLoading }: PriceProjectionProps) {
   // Estado para el rango de fechas seleccionado
   const [dateRange, setDateRange] = useState<{
     from: Date
@@ -196,8 +196,8 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
         // Para tendencia a la baja, proyectamos una disminución proporcional a la volatilidad
         baseProjectedChange = -Math.min(0.1, volatility * 2) // Máximo 10% de disminución
       } else {
-        // Para tendencia estable, proyectamos cambios mínimos
-        baseProjectedChange = Math.random() * 0.02 - 0.01 // Entre -1% y 1%
+        // Para tendencia estable, proyectamos cambios mínimos usando ruido determinista
+        baseProjectedChange = Math.sin(advertisements.length * 0.5) * 0.005 // Pequeño cambio basado en datos
       }
 
       // Calcular cambios proyectados para cada tipo de precio
@@ -300,12 +300,12 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
             event = tradeType === "BUY" ? "✓ Mejor día para comprar" : "Precio mínimo"
           }
         } else {
-          // Fluctuación aleatoria pequeña para precios estables
-          dayFactorBase = ((Math.random() * 0.02 - 0.01) * i) / 7
+          // Fluctuación determinista pequeña para precios estables basada en el día
+          dayFactorBase = (Math.sin(i * 0.3) * 0.01 * i) / 7
         }
 
-        // Añadir un poco de ruido aleatorio para hacer la proyección más realista
-        const noise = (Math.random() * 0.01 - 0.005) * i
+        // Añadir un poco de ruido determinista para hacer la proyección más realista
+        const noise = (Math.sin(i * 0.7) * 0.005) * i
 
         // Calcular factores para cada tipo de precio
         const dayFactors = {
@@ -485,30 +485,30 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
       if (tradeType === "SELL") {
         if (trend === "up") {
           const projectedBestPrice = bestDay ? bestDay.prices[priceBaseType] : selectedProjectedPrice
-          recommendation = `Se proyecta un aumento en los precios. El precio podría subir a ${formatCurrency(projectedBestPrice, "BOB")} para el ${bestDate}.`
+          recommendation = `Se proyecta un aumento en los precios. El precio podría subir a ${formatCurrency(projectedBestPrice, "VES")} para el ${bestDate}.`
           bestTime = bestDay?.event.includes("hoy")
             ? "Vende hoy mismo para evitar posibles caídas"
             : `Espera hasta el ${bestDate} para vender al mejor precio.`
         } else if (trend === "down") {
-          recommendation = `Se proyecta una disminución en los precios desde el precio actual de ${formatCurrency(selectedPrice, "BOB")}. Los precios comenzarán a bajar pronto.`
+          recommendation = `Se proyecta una disminución en los precios desde el precio actual de ${formatCurrency(selectedPrice, "VES")}. Los precios comenzarán a bajar pronto.`
           bestTime = "Vende hoy o lo antes posible para obtener el mejor precio."
         } else {
-          recommendation = `Los precios parecen estables alrededor del precio actual de ${formatCurrency(selectedPrice, "BOB")}. No se esperan cambios significativos en los próximos días.`
+          recommendation = `Los precios parecen estables alrededor del precio actual de ${formatCurrency(selectedPrice, "VES")}. No se esperan cambios significativos en los próximos días.`
           bestTime = "El momento de venta no es crítico, los precios son estables."
         }
       } else {
         // BUY
         if (trend === "up") {
-          recommendation = `Se proyecta un aumento en los precios desde el precio actual de ${formatCurrency(selectedPrice, "BOB")}. Los precios comenzarán a subir pronto.`
+          recommendation = `Se proyecta un aumento en los precios desde el precio actual de ${formatCurrency(selectedPrice, "VES")}. Los precios comenzarán a subir pronto.`
           bestTime = "Compra hoy o lo antes posible para obtener el mejor precio."
         } else if (trend === "down") {
           const projectedBestPrice = bestDay ? bestDay.prices[priceBaseType] : selectedProjectedPrice
-          recommendation = `Se proyecta una disminución en los precios. El precio podría bajar a ${formatCurrency(projectedBestPrice, "BOB")} para el ${bestDate}.`
+          recommendation = `Se proyecta una disminución en los precios. El precio podría bajar a ${formatCurrency(projectedBestPrice, "VES")} para el ${bestDate}.`
           bestTime = bestDay?.event.includes("hoy")
             ? "Compra hoy mismo para aprovechar el precio actual"
             : `Espera hasta el ${bestDate} para comprar al mejor precio.`
         } else {
-          recommendation = `Los precios parecen estables alrededor del precio actual de ${formatCurrency(selectedPrice, "BOB")}. No se esperan cambios significativos en los próximos días.`
+          recommendation = `Los precios parecen estables alrededor del precio actual de ${formatCurrency(selectedPrice, "VES")}. No se esperan cambios significativos en los próximos días.`
           bestTime = "El momento de compra no es crítico, los precios son estables."
         }
       }
@@ -659,6 +659,15 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
 
   return (
     <div className="space-y-6">
+      <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3 flex items-start gap-2">
+        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+            Solo estimación algorítmica. No es consejo financiero.
+          </p>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-muted/50 p-4 rounded-lg">
           <div className="flex items-center justify-between mb-2">
@@ -672,19 +681,19 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Precio mínimo:</span>
               <span className="font-medium">
-                {projection.currentPrices.min ? formatCurrency(projection.currentPrices.min, "BOB") : "-"}
+                {projection.currentPrices.min ? formatCurrency(projection.currentPrices.min, "VES") : "-"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Precio promedio:</span>
               <span className="font-medium">
-                {projection.currentPrices.avg ? formatCurrency(projection.currentPrices.avg, "BOB") : "-"}
+                {projection.currentPrices.avg ? formatCurrency(projection.currentPrices.avg, "VES") : "-"}
               </span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Precio máximo:</span>
               <span className="font-medium">
-                {projection.currentPrices.max ? formatCurrency(projection.currentPrices.max, "BOB") : "-"}
+                {projection.currentPrices.max ? formatCurrency(projection.currentPrices.max, "VES") : "-"}
               </span>
             </div>
           </div>
@@ -694,13 +703,13 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
           <h3 className="font-medium mb-2">Proyección de Precios</h3>
           <div className="flex justify-between items-center">
             <span className="text-sm text-muted-foreground">Precio actual ({getPriceTypeName(priceBaseType)}):</span>
-            <span className="font-medium">{currentPrice ? formatCurrency(currentPrice, "BOB") : "-"}</span>
+            <span className="font-medium">{currentPrice ? formatCurrency(currentPrice, "VES") : "-"}</span>
           </div>
           {projectedPrice && (
             <div className="flex justify-between items-center mt-2">
               <span className="text-sm text-muted-foreground">Precio proyectado (7 días):</span>
               <span className="font-bold">
-                {formatCurrency(projectedPrice, "BOB")}
+                {formatCurrency(projectedPrice, "VES")}
                 {projectedChange > 0 ? (
                   <ArrowUp className="inline h-4 w-4 ml-1 text-green-500" />
                 ) : projectedChange < 0 ? (
@@ -729,7 +738,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                 <span
                   className={`font-medium ${projection.projectedChanges.min && projection.projectedChanges.min > 0 ? "text-green-600" : projection.projectedChanges.min && projection.projectedChanges.min < 0 ? "text-red-600" : ""}`}
                 >
-                  {projection.projectedPrices.min ? formatCurrency(projection.projectedPrices.min, "BOB") : "-"}
+                  {projection.projectedPrices.min ? formatCurrency(projection.projectedPrices.min, "VES") : "-"}
                   {projection.projectedChanges.min && projection.projectedChanges.min !== 0 && (
                     <span className="ml-1">({projection.projectedChanges.min.toFixed(2)}%)</span>
                   )}
@@ -740,7 +749,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                 <span
                   className={`font-medium ${projection.projectedChanges.avg && projection.projectedChanges.avg > 0 ? "text-green-600" : projection.projectedChanges.avg && projection.projectedChanges.avg < 0 ? "text-red-600" : ""}`}
                 >
-                  {projection.projectedPrices.avg ? formatCurrency(projection.projectedPrices.avg, "BOB") : "-"}
+                  {projection.projectedPrices.avg ? formatCurrency(projection.projectedPrices.avg, "VES") : "-"}
                   {projection.projectedChanges.avg && projection.projectedChanges.avg !== 0 && (
                     <span className="ml-1">({projection.projectedChanges.avg.toFixed(2)}%)</span>
                   )}
@@ -751,7 +760,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                 <span
                   className={`font-medium ${projection.projectedChanges.max && projection.projectedChanges.max > 0 ? "text-green-600" : projection.projectedChanges.max && projection.projectedChanges.max < 0 ? "text-red-600" : ""}`}
                 >
-                  {projection.projectedPrices.max ? formatCurrency(projection.projectedPrices.max, "BOB") : "-"}
+                  {projection.projectedPrices.max ? formatCurrency(projection.projectedPrices.max, "VES") : "-"}
                   {projection.projectedChanges.max && projection.projectedChanges.max !== 0 && (
                     <span className="ml-1">({projection.projectedChanges.max.toFixed(2)}%)</span>
                   )}
@@ -858,7 +867,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                     <td className="py-2 px-2">{isSameDay(point.date, new Date()) ? "Hoy" : formatDate(point.date)}</td>
                     <td className="text-right py-2 px-2">
                       <div className="flex items-center justify-end">
-                        <span className="font-medium">{formatCurrency(point.prices.min, "BOB")}</span>
+                        <span className="font-medium">{formatCurrency(point.prices.min, "VES")}</span>
                         {index > 0 && (
                           <span
                             className={`text-xs ml-1 ${point.changes.min > 0 ? "text-green-600" : point.changes.min < 0 ? "text-red-600" : ""}`}
@@ -870,7 +879,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                     </td>
                     <td className="text-right py-2 px-2">
                       <div className="flex items-center justify-end">
-                        <span className="font-medium">{formatCurrency(point.prices.avg, "BOB")}</span>
+                        <span className="font-medium">{formatCurrency(point.prices.avg, "VES")}</span>
                         {index > 0 && (
                           <span
                             className={`text-xs ml-1 ${point.changes.avg > 0 ? "text-green-600" : point.changes.avg < 0 ? "text-red-600" : ""}`}
@@ -882,7 +891,7 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
                     </td>
                     <td className="text-right py-2 px-2">
                       <div className="flex items-center justify-end">
-                        <span className="font-medium">{formatCurrency(point.prices.max, "BOB")}</span>
+                        <span className="font-medium">{formatCurrency(point.prices.max, "VES")}</span>
                         {index > 0 && (
                           <span
                             className={`text-xs ml-1 ${point.changes.max > 0 ? "text-green-600" : point.changes.max < 0 ? "text-red-600" : ""}`}
@@ -910,6 +919,12 @@ export function PriceProjection({ advertisements, tradeType, isLoading }: PriceP
         <p className="text-xs text-muted-foreground mt-3">
           Nota: Esta proyección es una estimación basada en los datos actuales del mercado y puede variar.
         </p>
+      </div>
+
+      <div className="flex items-center justify-end">
+        <Badge variant="outline" className="text-xs">
+          Fuente: Binance P2P
+        </Badge>
       </div>
     </div>
   )

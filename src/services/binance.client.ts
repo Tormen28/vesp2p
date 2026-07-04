@@ -10,7 +10,6 @@ import type {
 import {
   ASSET,
   BINANCE_P2P_URL,
-  DEFAULT_MAX_PAGES,
   DEFAULT_MIN_ORDERS,
   DEFAULT_MIN_USDT_LIQUIDITY,
   FIAT,
@@ -21,102 +20,37 @@ interface FetchOptions {
   tradeType: TradeType
   minOrders?: number
   minUSDT?: number
-  maxPages?: number
 }
 
 export class BinanceService {
-  private static readonly HEADERS = {
-    Accept: "*/*",
-    "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
-    "Cache-Control": "no-cache",
-    "Content-Type": "application/json",
-    Lang: "es",
-    Origin: "https://p2p.binance.com",
-    Pragma: "no-cache",
-    Referer: "https://p2p.binance.com/es/trade/all-payments/USDT?fiat=VES",
-    "Sec-Ch-Ua": '"Google Chrome";v="113", "Chromium";v="113", "Not-A.Brand";v="24"',
-    "Sec-Ch-Ua-Mobile": "?0",
-    "Sec-Ch-Ua-Platform": '"Windows"',
-    "Sec-Fetch-Dest": "empty",
-    "Sec-Fetch-Mode": "cors",
-    "Sec-Fetch-Site": "same-origin",
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36",
-    "Client-Type": "web",
-  }
-
   static async fetchP2PData(options: FetchOptions): Promise<P2PData> {
     const {
       tradeType,
       minOrders = DEFAULT_MIN_ORDERS,
       minUSDT = DEFAULT_MIN_USDT_LIQUIDITY,
-      maxPages = DEFAULT_MAX_PAGES,
     } = options
 
-    const allAds: BinanceAd[] = []
+    const params = new URLSearchParams({
+      fiat: FIAT,
+      asset: ASSET,
+      tradeType,
+      limit: "20",
+    })
 
-    for (let page = 1; page <= maxPages; page++) {
-      const payload = {
-        asset: ASSET,
-        countries: [],
-        fiat: FIAT,
-        page,
-        payTypes: [],
-        proMerchantAds: false,
-        publisherType: null,
-        rows: 20,
-        tradeType,
-        transAmount: "",
-      }
+    const response = await fetch(`${BINANCE_P2P_URL}?${params}`, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+      cache: "no-store",
+      signal: AbortSignal.timeout(30000),
+    })
 
-      let success = false
-      let retries = 0
-      const maxRetries = 3
-
-      while (!success && retries < maxRetries) {
-        try {
-          const response = await fetch(BINANCE_P2P_URL, {
-            method: "POST",
-            headers: this.HEADERS,
-            body: JSON.stringify(payload),
-            cache: "no-store",
-            signal: AbortSignal.timeout(30000),
-          })
-
-          if (!response.ok) {
-            retries++
-            if (retries < maxRetries) {
-              await new Promise((resolve) => setTimeout(resolve, 500 * retries))
-              continue
-            }
-            break
-          }
-
-          const data: BinanceResponse = await response.json()
-
-          if (data.data?.length > 0) {
-            allAds.push(...data.data)
-            success = true
-            if (data.data.length < 20) break
-          } else {
-            success = true
-            break
-          }
-        } catch (error) {
-          console.error(`Error fetching page ${page} (attempt ${retries + 1}):`, error)
-          retries++
-          if (retries < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, 500 * retries))
-          } else {
-            throw error
-          }
-        }
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, 300))
+    if (!response.ok) {
+      throw new Error(`Binance API returned ${response.status}`)
     }
 
-    const processedAds = this.processAds(allAds)
+    const body: BinanceResponse = await response.json()
+    const items = body.data?.items ?? []
+
+    const processedAds = this.processAds(items)
     const uniqueAds = this.removeDuplicates(processedAds)
     const filteredAds = this.filterAds(uniqueAds, minOrders, minUSDT)
 
@@ -157,25 +91,23 @@ export class BinanceService {
     return ads
       .map((ad) => {
         try {
-          const price = Number.parseFloat(ad.adv.price)
-          const available = Number.parseFloat(ad.adv.surplusAmount)
-          const minLimit = Number.parseFloat(ad.adv.minSingleTransAmount)
-          const maxLimit = Number.parseFloat(ad.adv.maxSingleTransAmount)
+          const price = ad.price
+          const available = ad.tradableAmount
+          const minLimit = ad.minTransAmount
+          const maxLimit = ad.maxTransAmount
           const orderCount = ad.advertiser.monthOrderCount || 0
           const completionRate = ad.advertiser.monthFinishRate || 0
 
           return {
             advertiser: {
               nickName: ad.advertiser.nickName,
-              userNo: ad.advertiser.userNo,
               monthOrderCount: orderCount,
               monthFinishRate: completionRate,
               positiveRate: ad.advertiser.positiveRate,
               userType: ad.advertiser.userType,
               isVerified:
-                Boolean(ad.advertiser.proMerchant) ||
+                ad.advertiser.merchantGroupMember ||
                 ad.advertiser.userType === "merchant",
-              proMerchant: Boolean(ad.advertiser.proMerchant),
             },
             price,
             available,
@@ -185,10 +117,10 @@ export class BinanceService {
               minInUSDT: minLimit / price,
               maxInUSDT: maxLimit / price,
             },
-            payMethods: ad.adv.tradeMethods.map((m) => m.payType),
+            payMethods: ad.tradeMethods,
             orderCount,
             completionRate,
-            averageTime: ad.advertiser.avgReleaseTimeOfLatest30day || 0,
+            averageTime: ad.payTimeLimit || 0,
           }
         } catch {
           return null
@@ -205,7 +137,7 @@ export class BinanceService {
         index ===
         self.findIndex(
           (a) =>
-            a.advertiser.userNo === ad.advertiser.userNo &&
+            a.advertiser.nickName === ad.advertiser.nickName &&
             Math.abs(a.price - ad.price) < 0.01
         )
     )
@@ -229,8 +161,8 @@ export class BinanceService {
 
   static async fetchSimpleSnapshot(): Promise<SnapshotResult> {
     const [sellData, buyData] = await Promise.all([
-      this.fetchP2PData({ tradeType: "SELL", maxPages: 2 }),
-      this.fetchP2PData({ tradeType: "BUY", maxPages: 2 }),
+      this.fetchP2PData({ tradeType: "SELL" }),
+      this.fetchP2PData({ tradeType: "BUY" }),
     ])
 
     const sellPrices = sellData.advertisements.map((ad) => ad.price)

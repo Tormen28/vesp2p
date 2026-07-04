@@ -197,7 +197,7 @@ export function AdvertisersTable({ data, isLoading, type }: AdvertisersTableProp
               <TableHead>Anunciante</TableHead>
               <TableHead className="text-right">Precio</TableHead>
               <TableHead className="text-right">Disponible</TableHead>
-              <TableHead className="text-right">Límites (BOB)</TableHead>
+              <TableHead className="text-right">Límites (VES)</TableHead>
               <TableHead>Métodos de Pago</TableHead>
               <TableHead className="text-right">Órdenes</TableHead>
             </TableRow>
@@ -218,12 +218,12 @@ export function AdvertisersTable({ data, isLoading, type }: AdvertisersTableProp
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell className="text-right font-bold">{formatCurrency(ad.price, "BOB")}</TableCell>
+                  <TableCell className="text-right font-bold">{formatCurrency(ad.price, "VES")}</TableCell>
                   <TableCell className="text-right">{ad.available.toFixed(2)} USDT</TableCell>
                   <TableCell className="text-right">
                     <div className="flex flex-col items-end">
-                      <span>Min: {formatCurrency(ad.limits.min, "BOB")}</span>
-                      <span>Max: {formatCurrency(ad.limits.max, "BOB")}</span>
+                      <span>Min: {formatCurrency(ad.limits.min, "VES")}</span>
+                      <span>Max: {formatCurrency(ad.limits.max, "VES")}</span>
                     </div>
                   </TableCell>
                   <TableCell>

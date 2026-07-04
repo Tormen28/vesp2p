@@ -59,17 +59,17 @@ export function PriceDisplay({ data, isLoading, type }: PriceDisplayProps) {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-muted rounded-lg p-3 text-center">
           <p className="text-sm text-muted-foreground mb-1">Precio Mínimo</p>
-          <p className={`text-2xl font-bold ${minColor}`}>{data.priceStats.min} BOB</p>
+          <p className={`text-2xl font-bold ${minColor}`}>{data.priceStats.min} VES</p>
         </div>
         <div className="bg-muted rounded-lg p-3 text-center">
           <p className="text-sm text-muted-foreground mb-1">Precio Máximo</p>
-          <p className={`text-2xl font-bold ${maxColor}`}>{data.priceStats.max} BOB</p>
+          <p className={`text-2xl font-bold ${maxColor}`}>{data.priceStats.max} VES</p>
         </div>
       </div>
 
       <div className="bg-muted/50 rounded-lg p-3 text-center">
         <p className="text-sm text-muted-foreground mb-1">Diferencia (Spread)</p>
-        <p className="text-xl font-semibold">{data.priceStats.spread} BOB</p>
+        <p className="text-xl font-semibold">{data.priceStats.spread} VES</p>
       </div>
 
       <div className="text-sm text-muted-foreground">
