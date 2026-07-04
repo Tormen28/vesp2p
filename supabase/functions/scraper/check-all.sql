@@ -1,0 +1,1 @@
+SELECT * FROM MarketSnapshot ORDER BY id DESC LIMIT 5;
