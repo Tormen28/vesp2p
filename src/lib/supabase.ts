@@ -1,12 +1,3 @@
-const SUPABASE_URL = process.env.SUPABASE_URL
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY
-
-if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  throw new Error(
-    "Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars. Set them in .env or your deployment environment."
-  )
-}
-
 export interface SupabaseRestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE"
   body?: unknown
@@ -20,6 +11,12 @@ export async function supabaseRest<T = unknown>(
   options: SupabaseRestOptions = {}
 ): Promise<T> {
   const { method = "GET", body, query, prefer, signal } = options
+
+  const SUPABASE_URL = process.env.SUPABASE_URL
+  const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY
+  if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SECRET_KEY env vars")
+  }
 
   const url = new URL(`${SUPABASE_URL}/rest/v1/${table}`)
   if (query) {
