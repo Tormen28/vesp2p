@@ -7,16 +7,16 @@ const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000
 export interface MarketSnapshotRow {
   id: number
   timestamp: string
-  buyPrice: number
-  sellPrice: number
+  buyprice: number
+  sellprice: number
   spread: number
-  medianBuy: number
-  medianSell: number
-  q1Buy: number
-  q3Buy: number
-  q1Sell: number
-  q3Sell: number
-  trimmedAds: number
+  medianbuy: number
+  mediansell: number
+  q1buy: number
+  q3buy: number
+  q1sell: number
+  q3sell: number
+  trimmedads: number
   volume: number | null
 }
 
@@ -55,7 +55,7 @@ export class ScraperService {
       volume: 0,
     }
 
-    await supabaseRest<MarketSnapshotRow[]>("MarketSnapshot", {
+    await supabaseRest<MarketSnapshotRow[]>("marketsnapshot", {
       method: "POST",
       body: payload,
       query: { on_conflict: "timestamp" },
@@ -71,7 +71,7 @@ export class ScraperService {
   }
 
   static async getHistory(limit: number = 1000): Promise<MarketSnapshotRow[]> {
-    const rows = await supabaseRest<MarketSnapshotRow[]>("MarketSnapshot", {
+    const rows = await supabaseRest<MarketSnapshotRow[]>("marketsnapshot", {
       method: "GET",
       query: {
         select: "*",

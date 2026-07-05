@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic"
 
 interface MarketSnapshotRow {
   timestamp: string
-  buyPrice: number
+  buyprice: number
 }
 
 const TIMEFRAME_MS: Record<string, number> = {
@@ -43,14 +43,14 @@ function aggregateCandles(rows: MarketSnapshotRow[], timeframe: string) {
   const candles: { time: string; open: number; high: number; low: number; close: number }[] = []
 
   for (const [bucketKey, bucketRows] of Array.from(buckets.entries())) {
-    const open = bucketRows[0].buyPrice
-    const close = bucketRows[bucketRows.length - 1].buyPrice
+    const open = bucketRows[0].buyprice
+    const close = bucketRows[bucketRows.length - 1].buyprice
     let high = -Infinity
     let low = Infinity
 
     for (const r of bucketRows) {
-      if (r.buyPrice > high) high = r.buyPrice
-      if (r.buyPrice < low) low = r.buyPrice
+      if (r.buyprice > high) high = r.buyprice
+      if (r.buyprice < low) low = r.buyprice
     }
 
     candles.push({
@@ -90,8 +90,8 @@ export async function GET(request: Request) {
       )
     }
 
-    const url = new URL(`${SUPABASE_URL}/rest/v1/MarketSnapshot`)
-    url.searchParams.set("select", "timestamp,buyPrice")
+    const url = new URL(`${SUPABASE_URL}/rest/v1/marketsnapshot`)
+    url.searchParams.set("select", "timestamp,buyprice")
     url.searchParams.set("order", "timestamp.asc")
     url.searchParams.set("limit", String(limit))
 

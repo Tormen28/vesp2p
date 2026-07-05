@@ -12,8 +12,8 @@ export async function GET(request: Request) {
 
     const chartData = snapshots.map((snap) => ({
       time: Math.floor(new Date(snap.timestamp).getTime() / 1000),
-      buyPrice: snap.buyPrice,
-      sellPrice: snap.sellPrice,
+      buyPrice: snap.buyprice ?? snap.buyPrice,
+      sellPrice: snap.sellprice ?? snap.sellPrice,
       spread: snap.spread,
       volume: snap.volume,
     }))
