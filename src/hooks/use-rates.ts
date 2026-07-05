@@ -155,6 +155,29 @@ export function useRates(): UseRatesResult {
   const [history, setHistory] = useState<RatesResponse[]>([])
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  const fetchHistory = useCallback(async () => {
+    try {
+      const response = await fetch("/api/history?limit=100")
+      const result = await response.json()
+
+      if (result.success && result.data) {
+        // Mapeamos el histórico de la API a RatesResponse
+        const mappedHistory: RatesResponse[] = result.data.map((h: any) => ({
+          timestamp: h.time * 1000,
+          rates: [],
+          bestBid: { exchange: "Binance P2P", price: h.sellPrice },
+          bestAsk: { exchange: "Binance P2P", price: h.buyPrice },
+          globalSpread: h.spread,
+          avgPrice: (h.buyPrice + h.sellPrice) / 2,
+          source: "Binance P2P"
+        }))
+        setHistory(mappedHistory)
+      }
+    } catch (err) {
+      console.error("Error cargando histórico:", err)
+    }
+  }, [])
+
   const fetchRates = useCallback(async () => {
     try {
       const response = await fetch("/api/rates")
@@ -168,10 +191,7 @@ export function useRates(): UseRatesResult {
         setLastUpdated(new Date())
         setHistory((prev) => {
           const newHistory = [...prev, result]
-          if (newHistory.length > MAX_HISTORY) {
-            return newHistory.slice(-MAX_HISTORY)
-          }
-          return newHistory
+          return newHistory.slice(-MAX_HISTORY)
         })
       }
     } catch (err) {
@@ -187,6 +207,7 @@ export function useRates(): UseRatesResult {
   }, [fetchRates])
 
   useEffect(() => {
+    fetchHistory()
     fetchRates()
 
     intervalRef.current = setInterval(fetchRates, POLL_INTERVAL)
@@ -196,7 +217,7 @@ export function useRates(): UseRatesResult {
         clearInterval(intervalRef.current)
       }
     }
-  }, [fetchRates])
+  }, [fetchRates, fetchHistory])
 
   const metrics = useMemo(() => calculateMetrics(history, data), [history, data])
 

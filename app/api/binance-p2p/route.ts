@@ -3,22 +3,6 @@ import { getCloudflareContext } from "@opennextjs/cloudflare"
 
 export const dynamic = "force-dynamic"
 
-interface MarketSnapshotRow {
-  id: number
-  timestamp: string
-  buyPrice: number
-  sellPrice: number
-  spread: number
-  medianBuy: number
-  medianSell: number
-  q1Buy: number
-  q3Buy: number
-  q1Sell: number
-  q3Sell: number
-  trimmedAds: number
-  volume: number | null
-}
-
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
@@ -35,61 +19,39 @@ export async function GET(request: Request) {
       )
     }
 
-    // Leer último snapshot de Supabase
-    const url = new URL(`${SUPABASE_URL}/rest/v1/MarketSnapshot`)
-    url.searchParams.set("select", "*")
-    url.searchParams.set("order", "timestamp.desc")
-    url.searchParams.set("limit", "1")
+    // Proxy a la Edge Function en modo live
+    // La Edge Function puede leer Binance (está en AWS), el Worker no
+    const projectRef = SUPABASE_URL.replace("https://", "").split(".")[0]
+    const edgeFunctionUrl = `https://${projectRef}.supabase.co/functions/v1/scraper?live=true`
 
-    const response = await fetch(url.toString(), {
+    const response = await fetch(edgeFunctionUrl, {
       method: "GET",
       headers: {
-        apikey: SUPABASE_SECRET_KEY,
         Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
         "Content-Type": "application/json",
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(45000),
     })
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "")
-      throw new Error(`Supabase REST error ${response.status}: ${errorText}`)
+      throw new Error(`Edge Function error ${response.status}: ${errorText}`)
     }
 
-    const rows = await response.json() as MarketSnapshotRow[]
-    const snapshot = rows?.[0]
+    const data = await response.json()
 
-    if (!snapshot) {
-      return NextResponse.json(
-        { error: "No hay datos recientes. El cron se ejecuta cada 5 min." },
-        { status: 503 }
-      )
+    if (data.error) {
+      throw new Error(data.error)
     }
-
-    const isBuy = tradeType === "BUY"
-    const median = isBuy ? snapshot.medianBuy : snapshot.medianSell
-    const q1 = isBuy ? snapshot.q1Buy : snapshot.q1Sell
-    const q3 = isBuy ? snapshot.q3Buy : snapshot.q3Sell
 
     return NextResponse.json({
-      timestamp: snapshot.timestamp,
+      timestamp: data.timestamp,
       tradeType,
-      priceStats: {
-        min: q1.toFixed(2),
-        max: q3.toFixed(2),
-        median: median.toFixed(2),
-        spread: snapshot.spread.toFixed(2),
-      },
-      sampleSize: 0,
-      filterInfo: {
-        minOrders: 0,
-        totalCount: 0,
-        verifiedCount: 0,
-        usingAllAds: false,
-        totalAdsFound: 0,
-        trimmedCount: snapshot.trimmedAds,
-      },
+      priceStats: data.priceStats,
+      sampleSize: data.sampleSize,
+      advertisements: data.advertisements,
+      filterInfo: data.filterInfo,
     })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)

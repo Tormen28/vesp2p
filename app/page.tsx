@@ -3,20 +3,20 @@
 import { useState } from "react"
 import { DashboardHeader } from "@/components/ui/dashboard-header"
 import { ExchangeCard } from "@/components/ui/exchange-card"
+import { CandleChart } from "@/components/ui/candle-chart"
 import { TrendChart } from "@/components/ui/trend-chart"
 import { AlertConfig } from "@/components/ui/alert-config"
 import { AlgorithmPanel } from "@/components/ui/algorithm-panel"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useRates } from "@/hooks/use-rates"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, TrendingUp, TrendingDown, ArrowUp, ArrowDown } from "lucide-react"
+import { AlertCircle, ArrowUp, ArrowDown } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 
 type Section = "overview" | "exchanges" | "trends" | "config"
 
 export default function Home() {
   const [currentSection, setCurrentSection] = useState<Section>("overview")
-  const [alertCount] = useState(0)
 
   const {
     data,
@@ -24,14 +24,14 @@ export default function Home() {
     error,
     lastUpdated,
     refresh,
-    history,
     metrics,
+    history,
   } = useRates()
 
   const renderSection = () => {
     switch (currentSection) {
       case "overview":
-        return <OverviewSection data={data} isLoading={isLoading} error={error} history={history} metrics={metrics} />
+        return <OverviewSection data={data} isLoading={isLoading} error={error} metrics={metrics} />
       case "exchanges":
         return (
           <ExchangeCard
@@ -47,7 +47,12 @@ export default function Home() {
           />
         )
       case "trends":
-        return <TrendChart history={history} isLoading={isLoading} />
+        return (
+          <div className="space-y-6">
+            <TrendChart history={history} isLoading={isLoading} />
+            <CandleChart />
+          </div>
+        )
       case "config":
         return (
           <AlertConfig
@@ -65,7 +70,6 @@ export default function Home() {
       <DashboardHeader
         onSectionChange={setCurrentSection}
         currentSection={currentSection}
-        alertCount={alertCount}
       />
 
       {error && data?.rates.length === 0 && (
@@ -92,7 +96,6 @@ interface OverviewSectionProps {
   data: ReturnType<typeof useRates>["data"]
   isLoading: boolean
   error: string | null
-  history: ReturnType<typeof useRates>["history"]
   metrics: ReturnType<typeof useRates>["metrics"]
 }
 
@@ -120,9 +123,6 @@ function OverviewSection({ data, isLoading, error, metrics }: OverviewSectionPro
   const bestAsk = data?.bestAsk
   const avgPrice = data?.avgPrice || 0
   const globalSpread = data?.globalSpread || 0
-
-  const latestHistory = data
-  const firstHistory = data
 
   return (
     <div className="space-y-6">
@@ -240,8 +240,6 @@ function OverviewSection({ data, isLoading, error, metrics }: OverviewSectionPro
       </div>
 
       <AlgorithmPanel metrics={metrics} isLoading={isLoading} />
-
-      <TrendChart history={data ? [data] : []} isLoading={isLoading} />
     </div>
   )
 }

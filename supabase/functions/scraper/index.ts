@@ -115,10 +115,45 @@ async function rawUpsert(payload: Record<string, unknown>) {
   }
 }
 
+// ── Process ads into UI format ─────────────────────────────────────
+
+function processAds(ads: BinanceAd[]) {
+  return ads
+    .map((ad) => {
+      const price = ad.price
+      const orderCount = ad.advertiser.monthOrderCount || 0
+      return {
+        advertiser: {
+          nickName: ad.advertiser.nickName,
+          monthOrderCount: orderCount,
+          monthFinishRate: ad.advertiser.monthFinishRate || 0,
+          positiveRate: ad.advertiser.positiveRate || 0,
+          userType: ad.advertiser.userType,
+          isVerified: ad.advertiser.merchantGroupMember || ad.advertiser.userType === "merchant",
+        },
+        price,
+        available: ad.tradableAmount,
+        limits: {
+          min: ad.minTransAmount,
+          max: ad.maxTransAmount,
+          minInUSDT: ad.minTransAmount / price,
+          maxInUSDT: ad.maxTransAmount / price,
+        },
+        payMethods: ad.tradeMethods,
+        orderCount,
+        completionRate: ad.advertiser.monthFinishRate || 0,
+        averageTime: ad.payTimeLimit || 0,
+      }
+    })
+}
+
 // ── Main handler ────────────────────────────────────────────────────
 
 serve(async (req) => {
   try {
+    const url = new URL(req.url)
+    const liveOnly = url.searchParams.get("live") === "true"
+
     // Fetch SELL + BUY in parallel
     const [sellAds, buyAds] = await Promise.all([
       fetchBinance("SELL"),
@@ -143,6 +178,39 @@ serve(async (req) => {
     const medianSell = sellStats.median
     const medianBuy = buyStats.median
     const spread = medianBuy - medianSell
+
+    // MODO LIVE: devolver data sin guardar
+    if (liveOnly) {
+      const now = new Date().toISOString()
+      return new Response(
+        JSON.stringify({
+          timestamp: now,
+          tradeType: "SELL",
+          priceStats: {
+            min: sellStats.min.toFixed(2),
+            max: sellStats.max.toFixed(2),
+            median: medianSell.toFixed(2),
+            spread: spread.toFixed(2),
+          },
+          sampleSize: sellAds.length,
+          advertisements: {
+            sell: processAds(sellAds),
+            buy: processAds(buyAds),
+          },
+          filterInfo: {
+            minOrders: 500,
+            totalCount: sellAds.length + buyAds.length,
+            verifiedCount: [...sellAds, ...buyAds].filter(a => a.advertiser.merchantGroupMember).length,
+            usingAllAds: false,
+            totalAdsFound: sellAds.length + buyAds.length,
+            trimmedCount: sellStats.trimmedCount + buyStats.trimmedCount,
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      )
+    }
+
+    // MODO SCRAPER: guardar snapshot en Supabase
     const timestamp = roundTimestamp()
 
     const payload = {
