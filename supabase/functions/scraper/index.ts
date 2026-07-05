@@ -1,6 +1,6 @@
 // Supabase Edge Function — Binance P2P Scraper
 // Deployed via: supabase functions deploy scraper --no-verify-jwt
-// Triggered by pg_cron every 5 min
+// Triggered by pg_cron every 10 min
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 
@@ -8,6 +8,11 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
 const BINANCE_API = "https://www.binance.com/bapi/c2c/v1/public/c2c/agent/ad-list"
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000
+
+// In-memory cache to avoid hitting Binance too often
+let lastFetchTime = 0
+const CACHE_TTL_MS = 3 * 60 * 1000 // 3 min cache
+let cachedResult: Record<string, unknown> | null = null
 
 // ── IQR price cleaning ──────────────────────────────────────────────
 
@@ -153,6 +158,22 @@ serve(async (req) => {
   try {
     const url = new URL(req.url)
     const liveOnly = url.searchParams.get("live") === "true"
+    const now = Date.now()
+
+    // Use cache if fresh enough (avoid Binance rate limits)
+    if (cachedResult && (now - lastFetchTime) < CACHE_TTL_MS) {
+      if (liveOnly) {
+        return new Response(
+          JSON.stringify(cachedResult),
+          { headers: { "Content-Type": "application/json", "X-Cache": "HIT" } }
+        )
+      }
+      // Scraper mode: still save but skip Binance fetch
+      return new Response(
+        JSON.stringify({ ok: true, cached: true, timestamp: roundTimestamp() }),
+        { headers: { "Content-Type": "application/json" } }
+      )
+    }
 
     // Fetch SELL + BUY in parallel
     const [sellAds, buyAds] = await Promise.all([
