@@ -1,7 +1,8 @@
 "use client"
 
-import { useMemo } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   LineChart,
   Line,
@@ -12,13 +13,13 @@ import {
   ResponsiveContainer,
   Legend,
 } from "recharts"
-import { Skeleton } from "@/components/ui/skeleton"
 import { TrendingUp } from "lucide-react"
-import type { RatesResponse } from "@/hooks/use-rates"
 
-interface TrendChartProps {
-  history: RatesResponse[]
-  isLoading: boolean
+interface SnapshotRow {
+  time: number
+  buyprice: number
+  sellprice: number
+  spread: number
 }
 
 interface ChartDataPoint {
@@ -28,16 +29,39 @@ interface ChartDataPoint {
   bestAsk: number
 }
 
-export function TrendChart({ history, isLoading }: TrendChartProps) {
+interface TrendChartProps {
+  isLoading?: boolean
+}
+
+export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
+  const [history, setHistory] = useState<SnapshotRow[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch("/api/history?limit=500", { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.data) {
+          setHistory(data.data)
+        }
+        setIsLoading(false)
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setIsLoading(false)
+      })
+    return () => controller.abort()
+  }, [])
+
   const chartData = useMemo((): ChartDataPoint[] => {
     return history.map((item) => ({
-      time: new Date(item.timestamp).toLocaleTimeString("es-VE", {
+      time: new Date(item.time * 1000).toLocaleTimeString("es-VE", {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      avg: item.avgPrice,
-      bestBid: item.bestBid?.price || 0,
-      bestAsk: item.bestAsk?.price || 0,
+      avg: (item.buyprice + item.sellprice) / 2,
+      bestBid: item.sellprice,
+      bestAsk: item.buyprice,
     }))
   }, [history])
 
@@ -53,14 +77,16 @@ export function TrendChart({ history, isLoading }: TrendChartProps) {
     return Math.max(...allPrices) * 1.005
   }, [chartData])
 
-  const latestPrice = history.length > 0 ? history[history.length - 1].avgPrice : null
-  const firstPrice = history.length > 0 ? history[0].avgPrice : null
+  const latestPrice = chartData.length > 0 ? chartData[chartData.length - 1].avg : null
+  const firstPrice = chartData.length > 0 ? chartData[0].avg : null
   const priceChange = latestPrice && firstPrice ? latestPrice - firstPrice : null
   const priceChangePercent = latestPrice && firstPrice && firstPrice > 0
     ? ((latestPrice - firstPrice) / firstPrice) * 100
     : null
 
-  if (isLoading && chartData.length === 0) {
+  const showLoading = isLoading || externalLoading
+
+  if (showLoading && chartData.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -68,7 +94,7 @@ export function TrendChart({ history, isLoading }: TrendChartProps) {
             <TrendingUp className="h-5 w-5" />
             Tendencia
           </CardTitle>
-          <CardDescription>Últimas {chartData.length} lecturas</CardDescription>
+          <CardDescription>Cargando historial...</CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-[300px] w-full" />
@@ -85,11 +111,7 @@ export function TrendChart({ history, isLoading }: TrendChartProps) {
             <TrendingUp className="h-5 w-5" />
             Tendencia
           </CardTitle>
-          <CardDescription>
-            {chartData.length === 0
-              ? "Esperando datos..."
-              : "Necesitas al menos 2 lecturas para ver la tendencia"}
-          </CardDescription>
+          <CardDescription>Esperando datos...</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center text-muted-foreground">
@@ -110,7 +132,7 @@ export function TrendChart({ history, isLoading }: TrendChartProps) {
               Tendencia USDT/VES
             </CardTitle>
             <CardDescription>
-              Últimas {chartData.length} lecturas • Actualizado cada 60s
+              {chartData.length} lecturas historicas de Supabase
             </CardDescription>
           </div>
 

@@ -49,7 +49,7 @@ export default function Home() {
       case "trends":
         return (
           <div className="space-y-6">
-            <TrendChart history={history} isLoading={isLoading} />
+            <TrendChart />
             <CandleChart />
           </div>
         )
