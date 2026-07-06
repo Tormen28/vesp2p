@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useEffect, useMemo, useCallback } from "react"
+import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ChartCandlestick } from "lucide-react"
+import { ChartCandlestick, ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const GREEN = "#22c55e"
@@ -48,19 +48,27 @@ export function CandleChart({ className }: { className?: string }) {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tooltip, setTooltip] = useState<TooltipData | null>(null)
+  const [viewStart, setViewStart] = useState(0)
+  const [viewEnd, setViewEnd] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isDragging = useRef(false)
+  const lastMouseX = useRef(0)
 
   useEffect(() => {
     const controller = new AbortController()
     setIsLoading(true)
     setError(null)
 
-    fetch(`/api/candles?timeframe=${timeframe}&limit=100`, { signal: controller.signal })
+    fetch(`/api/candles?timeframe=${timeframe}&limit=200`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Error cargando velas")
         return res.json()
       })
       .then((data) => {
-        setCandles(data.candles || [])
+        const c = data.candles || []
+        setCandles(c)
+        setViewStart(0)
+        setViewEnd(c.length)
         setIsLoading(false)
       })
       .catch((err) => {
@@ -73,13 +81,104 @@ export function CandleChart({ className }: { className?: string }) {
     return () => controller.abort()
   }, [timeframe])
 
-  const latest = candles.length > 0 ? candles[candles.length - 1] : null
-  const first = candles.length > 0 ? candles[0] : null
+  const visibleCandles = useMemo(() => {
+    return candles.slice(Math.max(0, viewStart), viewEnd)
+  }, [candles, viewStart, viewEnd])
+
+  const latest = visibleCandles.length > 0 ? visibleCandles[visibleCandles.length - 1] : null
+  const first = visibleCandles.length > 0 ? visibleCandles[0] : null
   const change = latest && first && first.open > 0
     ? ((latest.close - first.open) / first.open) * 100
     : null
 
-  if (isLoading && candles.length === 0) {
+  const zoomIn = useCallback(() => {
+    const current = viewEnd - viewStart
+    const step = Math.max(3, Math.floor(current * 0.2))
+    const center = Math.floor((viewStart + viewEnd) / 2)
+    const newStart = Math.max(0, center - step)
+    const newEnd = Math.min(candles.length, center + step)
+    if (newEnd - newStart >= 3) {
+      setViewStart(newStart)
+      setViewEnd(newEnd)
+    }
+  }, [viewStart, viewEnd, candles.length])
+
+  const zoomOut = useCallback(() => {
+    const current = viewEnd - viewStart
+    const step = Math.max(3, Math.floor(current * 0.3))
+    const center = Math.floor((viewStart + viewEnd) / 2)
+    setViewStart(Math.max(0, center - step))
+    setViewEnd(Math.min(candles.length, center + step))
+  }, [viewStart, viewEnd, candles.length])
+
+  const resetView = useCallback(() => {
+    setViewStart(0)
+    setViewEnd(candles.length)
+  }, [candles.length])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      if (e.deltaY < 0) zoomIn()
+      else zoomOut()
+    }
+    el.addEventListener("wheel", handleWheel, { passive: false })
+    return () => el.removeEventListener("wheel", handleWheel)
+  }, [zoomIn, zoomOut])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true
+    lastMouseX.current = e.clientX
+  }, [])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const W = 800
+    const PAD = 80
+    const chartW = W - PAD
+    const current = viewEnd - viewStart
+
+    if (isDragging.current) {
+      const dx = e.clientX - lastMouseX.current
+      lastMouseX.current = e.clientX
+      const candlePixels = chartW / current
+      const candleDelta = Math.round(-dx / candlePixels)
+      if (candleDelta !== 0) {
+        const newStart = Math.max(0, Math.min(candles.length - current, viewStart + candleDelta))
+        setViewStart(newStart)
+        setViewEnd(newStart + current)
+      }
+      setTooltip(null)
+      return
+    }
+
+    const mouseX = ((e.clientX - rect.left) / rect.width) * W
+    const gap = chartW / current
+    const idx = Math.floor((mouseX - PAD / 2) / gap)
+    if (idx >= 0 && idx < visibleCandles.length) {
+      const c = visibleCandles[idx]
+      const x = (PAD / 2) + idx * gap + gap / 2
+      const allHighs = visibleCandles.map((v) => v.high)
+      const allLows = visibleCandles.map((v) => v.low)
+      const yMin = Math.min(...allLows) * 0.995
+      const yMax = Math.max(...allHighs) * 1.005
+      const chartH = 300
+      const scaleY = (price: number) =>
+        20 + (chartH - 40) - ((price - yMin) / (yMax - yMin)) * (chartH - 40)
+      const y = scaleY(c.close)
+      setTooltip({ candle: c, x: (x / W) * rect.width, y: (y / 320) * rect.height })
+    } else {
+      setTooltip(null)
+    }
+  }, [visibleCandles, viewStart, viewEnd, candles.length])
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false
+  }, [])
+
+  if (isLoading && visibleCandles.length === 0) {
     return (
       <Card className={className}>
         <CardHeader>
@@ -123,7 +222,7 @@ export function CandleChart({ className }: { className?: string }) {
               Velas Japonesas
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {candles.length} velas - Intervalo {timeframe}
+              {visibleCandles.length} de {candles.length} velas - Scroll para zoom, arrastrar para mover
             </p>
           </div>
           {latest && (
@@ -152,41 +251,57 @@ export function CandleChart({ className }: { className?: string }) {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Timeframe buttons */}
-        <div className="flex gap-1 mb-4 flex-wrap">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf.value}
-              onClick={() => setTimeframe(tf.value)}
-              className={cn(
-                "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
-                timeframe === tf.value
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              )}
-            >
-              {tf.label}
-            </button>
-          ))}
+        {/* Timeframe + Zoom controls */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <div className="flex gap-1">
+            {TIMEFRAMES.map((tf) => (
+              <button
+                key={tf.value}
+                onClick={() => setTimeframe(tf.value)}
+                className={cn(
+                  "px-3 py-1.5 text-xs font-medium rounded-md transition-colors",
+                  timeframe === tf.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                {tf.label}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-6 bg-border mx-1" />
+          <button onClick={zoomIn} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Zoom in">
+            <ZoomIn className="h-4 w-4" />
+          </button>
+          <button onClick={zoomOut} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Zoom out">
+            <ZoomOut className="h-4 w-4" />
+          </button>
+          <button onClick={resetView} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Reset">
+            <RotateCcw className="h-4 w-4" />
+          </button>
         </div>
 
-        {candles.length === 0 ? (
+        {visibleCandles.length === 0 ? (
           <div className="h-[300px] flex items-center justify-center text-muted-foreground">
             Sin datos para esta temporalidad
           </div>
         ) : (
-          <div className="relative">
-            <CandlestickSVG
-              candles={candles}
-              tf={timeframe}
-              onHover={setTooltip}
-            />
+          <div
+            ref={containerRef}
+            className="relative select-none"
+            style={{ cursor: isDragging.current ? "grabbing" : "grab" }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove as any}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          >
+            <CandlestickSVG candles={visibleCandles} tf={timeframe} />
             {tooltip && (
               <div
                 className="absolute z-50 pointer-events-none bg-gray-900 border border-gray-700 rounded-lg p-3 shadow-xl text-sm"
                 style={{
                   left: Math.min(tooltip.x, 600),
-                  top: Math.max(tooltip.y - 120, 10),
+                  top: Math.max(tooltip.y - 130, 10),
                 }}
               >
                 <div className="text-gray-400 text-xs mb-1">
@@ -227,11 +342,9 @@ export function CandleChart({ className }: { className?: string }) {
 function CandlestickSVG({
   candles,
   tf,
-  onHover,
 }: {
   candles: Candle[]
   tf: string
-  onHover: (data: TooltipData | null) => void
 }) {
   const W = 800
   const H = 320
@@ -259,31 +372,9 @@ function CandlestickSVG({
     yMin + (i / (gridLines - 1)) * (yMax - yMin)
   )
 
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      const rect = e.currentTarget.getBoundingClientRect()
-      const mouseX = ((e.clientX - rect.left) / rect.width) * W
-      const idx = Math.floor((mouseX - PAD.left) / gap)
-      if (idx >= 0 && idx < candles.length) {
-        const c = candles[idx]
-        const x = PAD.left + idx * gap + gap / 2
-        const y = scaleY(c.close)
-        onHover({ candle: c, x: (x / W) * rect.width, y: (y / H) * rect.height })
-      } else {
-        onHover(null)
-      }
-    },
-    [candles, gap, onHover]
-  )
-
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      className="w-full h-[300px]"
-      onMouseMove={handleMouseMove}
-      onMouseLeave={() => onHover(null)}
-    >
-      {/* Grid lines */}
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[300px]">
+      {/* Grid */}
       {gridPrices.map((price, i) => (
         <g key={i}>
           <line
@@ -295,12 +386,7 @@ function CandlestickSVG({
             strokeDasharray="3 3"
             strokeWidth={0.5}
           />
-          <text
-            x={W - PAD.right + 5}
-            y={scaleY(price) + 4}
-            fill="#9ca3af"
-            fontSize={10}
-          >
+          <text x={W - PAD.right + 5} y={scaleY(price) + 4} fill="#9ca3af" fontSize={10}>
             {price.toFixed(0)}
           </text>
         </g>
@@ -321,22 +407,13 @@ function CandlestickSVG({
 
         return (
           <g key={i}>
-            {/* Wick */}
-            <line
-              x1={x}
-              y1={highY}
-              x2={x}
-              y2={lowY}
-              stroke={color}
-              strokeWidth={1.5}
-            />
-            {/* Body */}
+            <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth={1.5} />
             <rect
               x={x - candleW / 2}
               y={bodyTop}
               width={candleW}
               height={bodyH}
-              fill={isGreen ? color : color}
+              fill={color}
               stroke={color}
               strokeWidth={0.5}
               rx={1}
@@ -351,14 +428,7 @@ function CandlestickSVG({
         if (i % step !== 0) return null
         const x = PAD.left + i * gap + gap / 2
         return (
-          <text
-            key={i}
-            x={x}
-            y={H - 5}
-            fill="#9ca3af"
-            fontSize={9}
-            textAnchor="middle"
-          >
+          <text key={i} x={x} y={H - 5} fill="#9ca3af" fontSize={9} textAnchor="middle">
             {formatTime(candle.time, tf)}
           </text>
         )
