@@ -3,16 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { TrendingUp, ZoomIn, ZoomOut, RotateCcw } from "lucide-react"
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts"
+import { TrendingUp } from "lucide-react"
 
 interface SnapshotRow {
   time: number
@@ -35,7 +26,11 @@ export function TrendChart() {
   const [error, setError] = useState<string | null>(null)
   const [viewStart, setViewStart] = useState(0)
   const [viewEnd, setViewEnd] = useState(0)
-  const containerRef = useRef<HTMLDivElement>(null)
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const svgRef = useRef<SVGSVGElement>(null)
+  const isDragging = useRef(false)
+  const lastMouseX = useRef(0)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -76,17 +71,32 @@ export function TrendChart() {
     return allData.slice(Math.max(0, viewStart), viewEnd)
   }, [allData, viewStart, viewEnd])
 
+  const W = 900
+  const H = 350
+  const PAD = { top: 25, right: 20, bottom: 40, left: 65 }
+  const chartW = W - PAD.left - PAD.right
+  const chartH = H - PAD.top - PAD.bottom
+
   const minPrice = useMemo(() => {
     if (chartData.length === 0) return 0
     const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
-    return allPrices.length > 0 ? Math.min(...allPrices) * 0.995 : 0
+    return allPrices.length > 0 ? Math.min(...allPrices) * 0.998 : 0
   }, [chartData])
 
   const maxPrice = useMemo(() => {
     if (chartData.length === 0) return 0
     const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
-    return allPrices.length > 0 ? Math.max(...allPrices) * 1.005 : 0
+    return allPrices.length > 0 ? Math.max(...allPrices) * 1.002 : 0
   }, [chartData])
+
+  const scaleY = useCallback((price: number) => {
+    return PAD.top + chartH - ((price - minPrice) / (maxPrice - minPrice || 1)) * chartH
+  }, [minPrice, maxPrice, chartH])
+
+  const scaleX = useCallback((idx: number) => {
+    const gap = chartW / (chartData.length || 1)
+    return PAD.left + idx * gap + gap / 2
+  }, [chartW, chartData.length])
 
   const latestPrice = chartData.length > 0 ? chartData[chartData.length - 1].avg : null
   const firstPrice = chartData.length > 0 ? chartData[0].avg : null
@@ -95,61 +105,77 @@ export function TrendChart() {
     ? ((latestPrice - firstPrice) / firstPrice) * 100
     : null
 
-  const zoomIn = useCallback(() => {
+  const zoom = useCallback((delta: number) => {
     const current = viewEnd - viewStart
-    const step = Math.max(5, Math.floor(current * 0.2))
+    const change = Math.max(2, Math.floor(current * Math.abs(delta) * 0.15))
     const center = Math.floor((viewStart + viewEnd) / 2)
-    const newStart = Math.max(0, center - step)
-    const newEnd = Math.min(allData.length, center + step)
-    if (newEnd - newStart >= 5) {
-      setViewStart(newStart)
-      setViewEnd(newEnd)
+    if (delta > 0) {
+      setViewStart(Math.max(0, center - change))
+      setViewEnd(Math.min(allData.length, center + change))
+    } else {
+      setViewStart(Math.max(0, center - change * 2))
+      setViewEnd(Math.min(allData.length, center + change * 2))
     }
   }, [viewStart, viewEnd, allData.length])
-
-  const zoomOut = useCallback(() => {
-    const current = viewEnd - viewStart
-    const step = Math.max(5, Math.floor(current * 0.3))
-    const center = Math.floor((viewStart + viewEnd) / 2)
-    setViewStart(Math.max(0, center - step))
-    setViewEnd(Math.min(allData.length, center + step))
-  }, [viewStart, viewEnd, allData.length])
-
-  const resetView = useCallback(() => {
-    setViewStart(0)
-    setViewEnd(allData.length)
-  }, [allData.length])
-
-  const panLeft = useCallback(() => {
-    const current = viewEnd - viewStart
-    const step = Math.max(1, Math.floor(current * 0.15))
-    setViewStart(Math.max(0, viewStart - step))
-    setViewEnd(Math.max(current, viewEnd - step))
-  }, [viewStart, viewEnd])
-
-  const panRight = useCallback(() => {
-    const current = viewEnd - viewStart
-    const step = Math.max(1, Math.floor(current * 0.15))
-    setViewStart(Math.min(allData.length - current, viewStart + step))
-    setViewEnd(Math.min(allData.length, viewEnd + step))
-  }, [viewStart, viewEnd, allData.length])
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault()
-      if (e.deltaY < 0) zoomIn()
-      else zoomOut()
-    }
-    el.addEventListener("wheel", handleWheel, { passive: false })
-    return () => el.removeEventListener("wheel", handleWheel)
-  }, [zoomIn, zoomOut])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
-    if (e.deltaY < 0) zoomIn()
-    else zoomOut()
-  }, [zoomIn, zoomOut])
+    e.preventDefault()
+    e.stopPropagation()
+    zoom(e.deltaY < 0 ? 1 : -1)
+  }, [zoom])
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true
+    lastMouseX.current = e.clientX
+    e.preventDefault()
+  }, [])
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    const svg = svgRef.current
+    if (!svg) return
+    const rect = svg.getBoundingClientRect()
+    const relX = e.clientX - rect.left
+    const relY = e.clientY - rect.top
+    setMousePos({ x: relX, y: relY })
+
+    const current = viewEnd - viewStart
+    const gap = chartW / (current || 1)
+
+    if (isDragging.current) {
+      const dx = e.clientX - lastMouseX.current
+      lastMouseX.current = e.clientX
+      const candleDelta = Math.round(-dx / (gap * (rect.width / W)))
+      if (candleDelta !== 0) {
+        const newStart = Math.max(0, Math.min(allData.length - current, viewStart + candleDelta))
+        setViewStart(newStart)
+        setViewEnd(newStart + current)
+      }
+      setHoverIdx(null)
+      return
+    }
+
+    const svgX = (relX / rect.width) * W
+    const idx = Math.floor((svgX - PAD.left) / gap)
+    if (idx >= 0 && idx < chartData.length) {
+      setHoverIdx(idx)
+    } else {
+      setHoverIdx(null)
+    }
+  }, [viewStart, viewEnd, chartData.length, allData.length, chartW])
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    isDragging.current = false
+    setHoverIdx(null)
+  }, [])
+
+  const gridLines = 6
+  const gridPrices = Array.from({ length: gridLines }, (_, i) =>
+    minPrice + (i / (gridLines - 1)) * (maxPrice - minPrice)
+  )
 
   if (isLoading && chartData.length === 0) {
     return (
@@ -160,9 +186,7 @@ export function TrendChart() {
             Tendencia USDT/VES
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <Skeleton className="h-[300px] w-full" />
-        </CardContent>
+        <CardContent><Skeleton className="h-[350px] w-full" /></CardContent>
       </Card>
     )
   }
@@ -177,27 +201,7 @@ export function TrendChart() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[300px] flex items-center justify-center text-red-500">
-            Error: {error}
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (chartData.length < 2) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            Tendencia USDT/VES
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-            <p>Recopilando datos... ({chartData.length} lecturas)</p>
-          </div>
+          <div className="h-[350px] flex items-center justify-center text-red-500">Error: {error}</div>
         </CardContent>
       </Card>
     )
@@ -213,87 +217,132 @@ export function TrendChart() {
               Tendencia USDT/VES
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              {chartData.length} de {allData.length} lecturas - Scroll para zoom
+              {chartData.length} de {allData.length} lecturas
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            {latestPrice && (
+          {latestPrice && (
+            <div className="flex items-center gap-3">
               <span className="text-2xl font-bold">
-                {latestPrice.toLocaleString("es-VE", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })} VES
+                {latestPrice.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} VES
               </span>
-            )}
-            {priceChange !== null && priceChangePercent !== null && (
-              <span
-                className={`flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded ${
-                  priceChange >= 0
-                    ? "bg-green-100 text-green-700"
-                    : "bg-red-100 text-red-700"
-                }`}
-              >
-                {priceChange >= 0 ? "+" : ""}
-                {priceChangePercent.toFixed(2)}%
-              </span>
-            )}
-          </div>
+              {priceChange !== null && priceChangePercent !== null && (
+                <span className={`flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded ${priceChange >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                  {priceChange >= 0 ? "+" : ""}{priceChangePercent.toFixed(2)}%
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </CardHeader>
-
       <CardContent>
-        {/* Zoom/Pan controls */}
-        <div className="flex items-center gap-1 mb-3">
-          <button onClick={zoomIn} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Zoom in">
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button onClick={zoomOut} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Zoom out">
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <button onClick={resetView} className="p-1.5 rounded bg-muted hover:bg-muted/80" title="Reset">
-            <RotateCcw className="h-4 w-4" />
-          </button>
-          <span className="text-xs text-muted-foreground ml-2">
-            {viewStart + 1}-{viewEnd} de {allData.length}
-          </span>
-        </div>
+        <div
+          className="relative rounded-lg border bg-card overflow-hidden"
+          style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove as any}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+        >
+          <svg
+            ref={svgRef}
+            viewBox={`0 0 ${W} ${H}`}
+            className="w-full select-none"
+            style={{ height: 350 }}
+          >
+            {/* Grid */}
+            {gridPrices.map((price, i) => (
+              <g key={i}>
+                <line x1={PAD.left} y1={scaleY(price)} x2={W - PAD.right} y2={scaleY(price)} stroke="#374151" strokeDasharray="3 3" strokeWidth={0.5} />
+                <text x={PAD.left - 8} y={scaleY(price) + 4} fill="#9ca3af" fontSize={10} textAnchor="end">{price.toFixed(0)}</text>
+              </g>
+            ))}
 
-        <div ref={containerRef} className="h-[300px] w-full" onWheel={handleWheel}>
-          <LineChart data={chartData} width={800} height={300} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-            <XAxis
-              dataKey="time"
-              stroke="#9ca3af"
-              fontSize={11}
-              tickLine={false}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              stroke="#9ca3af"
-              fontSize={11}
-              tickLine={false}
-              domain={[minPrice, maxPrice]}
-              tickFormatter={(value) => value.toFixed(0)}
-              width={60}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#1f2937",
-                border: "1px solid #374151",
-                borderRadius: "0.5rem",
-                color: "#e5e7eb",
+            {/* X axis labels */}
+            {chartData.map((d, i) => {
+              const step = Math.max(1, Math.floor(chartData.length / 12))
+              if (i % step !== 0) return null
+              return (
+                <text key={i} x={scaleX(i)} y={H - 10} fill="#9ca3af" fontSize={10} textAnchor="middle">
+                  {d.time}
+                </text>
+              )
+            })}
+
+            {/* Lines */}
+            {chartData.length > 1 && (
+              <>
+                <polyline
+                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestBid)}`).join(" ")}
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth={2}
+                />
+                <polyline
+                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestAsk)}`).join(" ")}
+                  fill="none"
+                  stroke="#ef4444"
+                  strokeWidth={2}
+                />
+                <polyline
+                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")}
+                  fill="none"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                />
+              </>
+            )}
+
+            {/* Crosshair */}
+            {hoverIdx !== null && hoverIdx < chartData.length && (
+              <g>
+                <line x1={scaleX(hoverIdx)} y1={PAD.top} x2={scaleX(hoverIdx)} y2={H - PAD.bottom} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
+                <line x1={PAD.left} y1={scaleY(chartData[hoverIdx].avg)} x2={W - PAD.right} y2={scaleY(chartData[hoverIdx].avg)} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
+                {chartData.map((d, i) => {
+                  if (Math.abs(i - hoverIdx) > 0) return null
+                  return (
+                    <g key={i}>
+                      <circle cx={scaleX(i)} cy={scaleY(d.bestBid)} r={4} fill="#22c55e" stroke="#fff" strokeWidth={1} />
+                      <circle cx={scaleX(i)} cy={scaleY(d.bestAsk)} r={4} fill="#ef4444" stroke="#fff" strokeWidth={1} />
+                      <circle cx={scaleX(i)} cy={scaleY(d.avg)} r={4} fill="#6366f1" stroke="#fff" strokeWidth={1} />
+                    </g>
+                  )
+                })}
+              </g>
+            )}
+          </svg>
+
+          {/* Tooltip */}
+          {hoverIdx !== null && hoverIdx < chartData.length && (
+            <div
+              className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm"
+              style={{
+                left: Math.min(mousePos.x + 15, W - 200),
+                top: Math.max(mousePos.y - 100, 10),
               }}
-              labelStyle={{ color: "#9ca3af" }}
-              formatter={(value: number) => [`${value.toFixed(2)} VES`, ""]}
-            />
-            <Legend />
-            <Line type="monotone" dataKey="bestBid" stroke="#22c55e" strokeWidth={2} dot={false} name="Mejor Compra" />
-            <Line type="monotone" dataKey="bestAsk" stroke="#ef4444" strokeWidth={2} dot={false} name="Mejor Venta" />
-            <Line type="monotone" dataKey="avg" stroke="#6366f1" strokeWidth={2} dot={false} name="Promedio" />
-          </LineChart>
+            >
+              <div className="text-gray-400 text-xs mb-1">
+                {chartData[hoverIdx].time}
+              </div>
+              <div className="space-y-1">
+                <div className="flex justify-between gap-4">
+                  <span className="text-green-400">Compra:</span>
+                  <span className="font-mono text-green-400">{chartData[hoverIdx].bestBid.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-red-400">Venta:</span>
+                  <span className="font-mono text-red-400">{chartData[hoverIdx].bestAsk.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-indigo-400">Promedio:</span>
+                  <span className="font-mono text-indigo-400">{chartData[hoverIdx].avg.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center justify-center gap-6 mt-4 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center gap-6 mt-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-green-500" />
             <span>Mejor Compra</span>
@@ -306,6 +355,9 @@ export function TrendChart() {
             <div className="w-3 h-3 rounded-full bg-indigo-500" />
             <span>Promedio</span>
           </div>
+          <span className="text-xs text-muted-foreground ml-2">
+            Scroll=zoom | Arrastrar=mover
+          </span>
         </div>
       </CardContent>
     </Card>
