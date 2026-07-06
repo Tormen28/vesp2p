@@ -29,6 +29,7 @@ export function TrendChart() {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const lastMouseX = useRef(0)
 
@@ -54,12 +55,21 @@ export function TrendChart() {
     return () => controller.abort()
   }, [])
 
+  // Capturar wheel con passive:false para evitar scroll de pagina
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    el.addEventListener("wheel", handler, { passive: false })
+    return () => el.removeEventListener("wheel", handler)
+  }, [])
+
   const allData = useMemo((): ChartDataPoint[] => {
     return history.map((item: any) => ({
-      time: new Date(item.time * 1000).toLocaleTimeString("es-VE", {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
+      time: new Date(item.time * 1000).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
       timestamp: item.time,
       avg: ((item.buyPrice ?? item.buyprice) + (item.sellPrice ?? item.sellprice)) / 2,
       bestBid: item.sellPrice ?? item.sellprice ?? 0,
@@ -67,43 +77,30 @@ export function TrendChart() {
     }))
   }, [history])
 
-  const chartData = useMemo(() => {
-    return allData.slice(Math.max(0, viewStart), viewEnd)
-  }, [allData, viewStart, viewEnd])
+  const chartData = useMemo(() => allData.slice(Math.max(0, viewStart), viewEnd), [allData, viewStart, viewEnd])
 
-  const W = 900
-  const H = 350
+  const W = 900, H = 350
   const PAD = { top: 25, right: 20, bottom: 40, left: 65 }
   const chartW = W - PAD.left - PAD.right
   const chartH = H - PAD.top - PAD.bottom
 
   const minPrice = useMemo(() => {
     if (chartData.length === 0) return 0
-    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
-    return allPrices.length > 0 ? Math.min(...allPrices) * 0.998 : 0
+    return Math.min(...chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)) * 0.998
   }, [chartData])
 
   const maxPrice = useMemo(() => {
     if (chartData.length === 0) return 0
-    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
-    return allPrices.length > 0 ? Math.max(...allPrices) * 1.002 : 0
+    return Math.max(...chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)) * 1.002
   }, [chartData])
 
-  const scaleY = useCallback((price: number) => {
-    return PAD.top + chartH - ((price - minPrice) / (maxPrice - minPrice || 1)) * chartH
-  }, [minPrice, maxPrice, chartH])
-
-  const scaleX = useCallback((idx: number) => {
-    const gap = chartW / (chartData.length || 1)
-    return PAD.left + idx * gap + gap / 2
-  }, [chartW, chartData.length])
+  const scaleY = useCallback((price: number) => PAD.top + chartH - ((price - minPrice) / (maxPrice - minPrice || 1)) * chartH, [minPrice, maxPrice, chartH])
+  const scaleX = useCallback((idx: number) => PAD.left + (idx / (chartData.length || 1)) * chartW + (chartW / (chartData.length || 1)) / 2, [chartW, chartData.length])
 
   const latestPrice = chartData.length > 0 ? chartData[chartData.length - 1].avg : null
   const firstPrice = chartData.length > 0 ? chartData[0].avg : null
   const priceChange = latestPrice && firstPrice ? latestPrice - firstPrice : null
-  const priceChangePercent = latestPrice && firstPrice && firstPrice > 0
-    ? ((latestPrice - firstPrice) / firstPrice) * 100
-    : null
+  const priceChangePercent = latestPrice && firstPrice && firstPrice > 0 ? ((latestPrice - firstPrice) / firstPrice) * 100 : null
 
   const zoom = useCallback((delta: number) => {
     const current = viewEnd - viewStart
@@ -127,10 +124,9 @@ export function TrendChart() {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true
     lastMouseX.current = e.clientX
-    e.preventDefault()
   }, [])
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const svg = svgRef.current
     if (!svg) return
     const rect = svg.getBoundingClientRect()
@@ -139,12 +135,11 @@ export function TrendChart() {
     setMousePos({ x: relX, y: relY })
 
     const current = viewEnd - viewStart
-    const gap = chartW / (current || 1)
-
     if (isDragging.current) {
       const dx = e.clientX - lastMouseX.current
       lastMouseX.current = e.clientX
-      const candleDelta = Math.round(-dx / (gap * (rect.width / W)))
+      const candlePixels = (chartW * (rect.width / W)) / (current || 1)
+      const candleDelta = Math.round(-dx / candlePixels)
       if (candleDelta !== 0) {
         const newStart = Math.max(0, Math.min(allData.length - current, viewStart + candleDelta))
         setViewStart(newStart)
@@ -155,37 +150,22 @@ export function TrendChart() {
     }
 
     const svgX = (relX / rect.width) * W
+    const gap = chartW / (current || 1)
     const idx = Math.floor((svgX - PAD.left) / gap)
-    if (idx >= 0 && idx < chartData.length) {
-      setHoverIdx(idx)
-    } else {
-      setHoverIdx(null)
-    }
+    if (idx >= 0 && idx < chartData.length) setHoverIdx(idx)
+    else setHoverIdx(null)
   }, [viewStart, viewEnd, chartData.length, allData.length, chartW])
 
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false
-  }, [])
-
-  const handleMouseLeave = useCallback(() => {
-    isDragging.current = false
-    setHoverIdx(null)
-  }, [])
+  const handleMouseUp = useCallback(() => { isDragging.current = false }, [])
+  const handleMouseLeave = useCallback(() => { isDragging.current = false; setHoverIdx(null) }, [])
 
   const gridLines = 6
-  const gridPrices = Array.from({ length: gridLines }, (_, i) =>
-    minPrice + (i / (gridLines - 1)) * (maxPrice - minPrice)
-  )
+  const gridPrices = Array.from({ length: gridLines }, (_, i) => minPrice + (i / (gridLines - 1)) * (maxPrice - minPrice))
 
   if (isLoading && chartData.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            Tendencia USDT/VES
-          </CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />Tendencia USDT/VES</CardTitle></CardHeader>
         <CardContent><Skeleton className="h-[350px] w-full" /></CardContent>
       </Card>
     )
@@ -194,15 +174,8 @@ export function TrendChart() {
   if (error && chartData.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <TrendingUp className="h-5 w-5" />
-            Tendencia USDT/VES
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[350px] flex items-center justify-center text-red-500">Error: {error}</div>
-        </CardContent>
+        <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />Tendencia USDT/VES</CardTitle></CardHeader>
+        <CardContent><div className="h-[350px] flex items-center justify-center text-red-500">Error: {error}</div></CardContent>
       </Card>
     )
   }
@@ -212,19 +185,12 @@ export function TrendChart() {
       <CardHeader>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              Tendencia USDT/VES
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              {chartData.length} de {allData.length} lecturas
-            </p>
+            <CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" />Tendencia USDT/VES</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">{chartData.length} de {allData.length} lecturas</p>
           </div>
           {latestPrice && (
             <div className="flex items-center gap-3">
-              <span className="text-2xl font-bold">
-                {latestPrice.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} VES
-              </span>
+              <span className="text-2xl font-bold">{latestPrice.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} VES</span>
               {priceChange !== null && priceChangePercent !== null && (
                 <span className={`flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded ${priceChange >= 0 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                   {priceChange >= 0 ? "+" : ""}{priceChangePercent.toFixed(2)}%
@@ -236,6 +202,7 @@ export function TrendChart() {
       </CardHeader>
       <CardContent>
         <div
+          ref={containerRef}
           className="relative rounded-lg border bg-card overflow-hidden"
           style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
           onWheel={handleWheel}
@@ -244,120 +211,51 @@ export function TrendChart() {
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
         >
-          <svg
-            ref={svgRef}
-            viewBox={`0 0 ${W} ${H}`}
-            className="w-full select-none"
-            style={{ height: 350 }}
-          >
-            {/* Grid */}
+          <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full select-none" style={{ height: 350 }}>
             {gridPrices.map((price, i) => (
               <g key={i}>
                 <line x1={PAD.left} y1={scaleY(price)} x2={W - PAD.right} y2={scaleY(price)} stroke="#374151" strokeDasharray="3 3" strokeWidth={0.5} />
                 <text x={PAD.left - 8} y={scaleY(price) + 4} fill="#9ca3af" fontSize={10} textAnchor="end">{price.toFixed(0)}</text>
               </g>
             ))}
-
-            {/* X axis labels */}
             {chartData.map((d, i) => {
               const step = Math.max(1, Math.floor(chartData.length / 12))
               if (i % step !== 0) return null
-              return (
-                <text key={i} x={scaleX(i)} y={H - 10} fill="#9ca3af" fontSize={10} textAnchor="middle">
-                  {d.time}
-                </text>
-              )
+              return <text key={i} x={scaleX(i)} y={H - 10} fill="#9ca3af" fontSize={10} textAnchor="middle">{d.time}</text>
             })}
-
-            {/* Lines */}
             {chartData.length > 1 && (
               <>
-                <polyline
-                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestBid)}`).join(" ")}
-                  fill="none"
-                  stroke="#22c55e"
-                  strokeWidth={2}
-                />
-                <polyline
-                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestAsk)}`).join(" ")}
-                  fill="none"
-                  stroke="#ef4444"
-                  strokeWidth={2}
-                />
-                <polyline
-                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")}
-                  fill="none"
-                  stroke="#6366f1"
-                  strokeWidth={2}
-                />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestBid)}`).join(" ")} fill="none" stroke="#22c55e" strokeWidth={2} />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestAsk)}`).join(" ")} fill="none" stroke="#ef4444" strokeWidth={2} />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")} fill="none" stroke="#6366f1" strokeWidth={2} />
               </>
             )}
-
-            {/* Crosshair */}
             {hoverIdx !== null && hoverIdx < chartData.length && (
               <g>
                 <line x1={scaleX(hoverIdx)} y1={PAD.top} x2={scaleX(hoverIdx)} y2={H - PAD.bottom} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
                 <line x1={PAD.left} y1={scaleY(chartData[hoverIdx].avg)} x2={W - PAD.right} y2={scaleY(chartData[hoverIdx].avg)} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
-                {chartData.map((d, i) => {
-                  if (Math.abs(i - hoverIdx) > 0) return null
-                  return (
-                    <g key={i}>
-                      <circle cx={scaleX(i)} cy={scaleY(d.bestBid)} r={4} fill="#22c55e" stroke="#fff" strokeWidth={1} />
-                      <circle cx={scaleX(i)} cy={scaleY(d.bestAsk)} r={4} fill="#ef4444" stroke="#fff" strokeWidth={1} />
-                      <circle cx={scaleX(i)} cy={scaleY(d.avg)} r={4} fill="#6366f1" stroke="#fff" strokeWidth={1} />
-                    </g>
-                  )
-                })}
+                <circle cx={scaleX(hoverIdx)} cy={scaleY(chartData[hoverIdx].bestBid)} r={4} fill="#22c55e" stroke="#fff" strokeWidth={1.5} />
+                <circle cx={scaleX(hoverIdx)} cy={scaleY(chartData[hoverIdx].bestAsk)} r={4} fill="#ef4444" stroke="#fff" strokeWidth={1.5} />
+                <circle cx={scaleX(hoverIdx)} cy={scaleY(chartData[hoverIdx].avg)} r={4} fill="#6366f1" stroke="#fff" strokeWidth={1.5} />
               </g>
             )}
           </svg>
-
-          {/* Tooltip */}
           {hoverIdx !== null && hoverIdx < chartData.length && (
-            <div
-              className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm"
-              style={{
-                left: Math.min(mousePos.x + 15, W - 200),
-                top: Math.max(mousePos.y - 100, 10),
-              }}
-            >
-              <div className="text-gray-400 text-xs mb-1">
-                {chartData[hoverIdx].time}
-              </div>
+            <div className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm" style={{ left: Math.min(mousePos.x + 15, W - 200), top: Math.max(mousePos.y - 100, 10) }}>
+              <div className="text-gray-400 text-xs mb-1">{chartData[hoverIdx].time}</div>
               <div className="space-y-1">
-                <div className="flex justify-between gap-4">
-                  <span className="text-green-400">Compra:</span>
-                  <span className="font-mono text-green-400">{chartData[hoverIdx].bestBid.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-red-400">Venta:</span>
-                  <span className="font-mono text-red-400">{chartData[hoverIdx].bestAsk.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <span className="text-indigo-400">Promedio:</span>
-                  <span className="font-mono text-indigo-400">{chartData[hoverIdx].avg.toFixed(2)}</span>
-                </div>
+                <div className="flex justify-between gap-4"><span className="text-green-400">Compra:</span><span className="font-mono text-green-400">{chartData[hoverIdx].bestBid.toFixed(2)}</span></div>
+                <div className="flex justify-between gap-4"><span className="text-red-400">Venta:</span><span className="font-mono text-red-400">{chartData[hoverIdx].bestAsk.toFixed(2)}</span></div>
+                <div className="flex justify-between gap-4"><span className="text-indigo-400">Promedio:</span><span className="font-mono text-indigo-400">{chartData[hoverIdx].avg.toFixed(2)}</span></div>
               </div>
             </div>
           )}
         </div>
-
         <div className="flex items-center justify-center gap-6 mt-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500" />
-            <span>Mejor Compra</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span>Mejor Venta</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-indigo-500" />
-            <span>Promedio</span>
-          </div>
-          <span className="text-xs text-muted-foreground ml-2">
-            Scroll=zoom | Arrastrar=mover
-          </span>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500" /><span>Mejor Compra</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" /><span>Mejor Venta</span></div>
+          <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-indigo-500" /><span>Promedio</span></div>
+          <span className="text-xs text-muted-foreground ml-2">Scroll=zoom | Arrastrar=mover</span>
         </div>
       </CardContent>
     </Card>
