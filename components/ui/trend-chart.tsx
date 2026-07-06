@@ -55,31 +55,6 @@ export function TrendChart() {
     return () => controller.abort()
   }, [])
 
-  // Capturar wheel con passive:false para evitar scroll de pagina
-  const zoomRef = useRef({ viewStart, viewEnd, totalLen: 0 })
-  zoomRef.current = { viewStart, viewEnd, totalLen: allData.length }
-
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el) return
-    const handler = (e: WheelEvent) => {
-      e.preventDefault()
-      e.stopPropagation()
-      const { viewStart: vs, viewEnd: ve, totalLen } = zoomRef.current
-      const current = ve - vs
-      if (current < 3) return
-      const step = Math.max(1, Math.floor(current * 0.15))
-      const center = Math.floor((vs + ve) / 2)
-      const newLen = Math.max(5, current + (e.deltaY > 0 ? step : -step))
-      const ns = Math.max(0, center - Math.floor(newLen / 2))
-      const ne = Math.min(totalLen, center + Math.ceil(newLen / 2))
-      setViewStart(ns)
-      setViewEnd(ne)
-    }
-    el.addEventListener("wheel", handler, { passive: false })
-    return () => el.removeEventListener("wheel", handler)
-  }, [allData.length])
-
   const allData = useMemo((): ChartDataPoint[] => {
     return history.map((item: any) => ({
       time: new Date(item.time * 1000).toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }),
@@ -96,6 +71,35 @@ export function TrendChart() {
   const PAD = { top: 25, right: 20, bottom: 40, left: 65 }
   const chartW = W - PAD.left - PAD.right
   const chartH = H - PAD.top - PAD.bottom
+
+  const zoomStateRef = useRef({ viewStart: 0, viewEnd: 0, total: 0 })
+
+  useEffect(() => {
+    zoomStateRef.current.viewStart = viewStart
+    zoomStateRef.current.viewEnd = viewEnd
+    zoomStateRef.current.total = allData.length
+  })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const s = zoomStateRef.current
+      const current = s.viewEnd - s.viewStart
+      if (current < 3) return
+      const step = Math.max(1, Math.floor(current * 0.15))
+      const center = Math.floor((s.viewStart + s.viewEnd) / 2)
+      const newLen = Math.max(5, current + (e.deltaY > 0 ? step : -step))
+      const ns = Math.max(0, center - Math.floor(newLen / 2))
+      const ne = Math.min(s.total, center + Math.ceil(newLen / 2))
+      setViewStart(ns)
+      setViewEnd(ne)
+    }
+    el.addEventListener("wheel", handler, { passive: false })
+    return () => el.removeEventListener("wheel", handler)
+  }, [allData.length])
 
   const minPrice = useMemo(() => {
     if (chartData.length === 0) return 0
@@ -125,8 +129,7 @@ export function TrendChart() {
     if (!svg) return
     const rect = svg.getBoundingClientRect()
     const relX = e.clientX - rect.left
-    const relY = e.clientY - rect.top
-    setMousePos({ x: relX, y: relY })
+    setMousePos({ x: relX, y: e.clientY - rect.top })
 
     const current = viewEnd - viewStart
     if (isDragging.current) {

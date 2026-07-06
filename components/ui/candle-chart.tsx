@@ -50,8 +50,13 @@ export function CandleChart({ className }: { className?: string }) {
   const isDragging = useRef(false)
   const lastMouseX = useRef(0)
 
-  const zoomRef = useRef({ viewStart, viewEnd, candlesLen: 0 })
-  zoomRef.current = { viewStart, viewEnd, candlesLen: candles.length }
+  const zoomStateRef = useRef({ viewStart: 0, viewEnd: 0, total: 0 })
+
+  useEffect(() => {
+    zoomStateRef.current.viewStart = viewStart
+    zoomStateRef.current.viewEnd = viewEnd
+    zoomStateRef.current.total = candles.length
+  })
 
   useEffect(() => {
     const el = containerRef.current
@@ -59,14 +64,14 @@ export function CandleChart({ className }: { className?: string }) {
     const handler = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
-      const { viewStart: vs, viewEnd: ve, candlesLen } = zoomRef.current
-      const current = ve - vs
+      const s = zoomStateRef.current
+      const current = s.viewEnd - s.viewStart
       if (current < 3) return
       const step = Math.max(1, Math.floor(current * 0.15))
-      const center = Math.floor((vs + ve) / 2)
+      const center = Math.floor((s.viewStart + s.viewEnd) / 2)
       const newLen = Math.max(5, current + (e.deltaY > 0 ? step : -step))
       const ns = Math.max(0, center - Math.floor(newLen / 2))
-      const ne = Math.min(candlesLen, center + Math.ceil(newLen / 2))
+      const ne = Math.min(s.total, center + Math.ceil(newLen / 2))
       setViewStart(ns)
       setViewEnd(ne)
     }
@@ -146,8 +151,7 @@ export function CandleChart({ className }: { className?: string }) {
     if (!svg) return
     const rect = svg.getBoundingClientRect()
     const relX = e.clientX - rect.left
-    const relY = e.clientY - rect.top
-    setMousePos({ x: relX, y: relY })
+    setMousePos({ x: relX, y: e.clientY - rect.top })
 
     const current = viewEnd - viewStart
 
@@ -246,7 +250,6 @@ export function CandleChart({ className }: { className?: string }) {
         </div>
       </CardHeader>
       <CardContent>
-        {/* Timeframe selector */}
         <div className="flex gap-1 mb-3 flex-wrap">
           {TIMEFRAMES.map((tf) => (
             <button
@@ -284,7 +287,6 @@ export function CandleChart({ className }: { className?: string }) {
               className="w-full select-none"
               style={{ height: 350 }}
             >
-              {/* Grid */}
               {gridPrices.map((price, i) => (
                 <g key={i}>
                   <line x1={PAD.left} y1={scaleY(price)} x2={W - PAD.right} y2={scaleY(price)} stroke="#374151" strokeDasharray="3 3" strokeWidth={0.5} />
@@ -292,7 +294,6 @@ export function CandleChart({ className }: { className?: string }) {
                 </g>
               ))}
 
-              {/* X axis labels */}
               {visibleCandles.map((c, i) => {
                 const step = Math.max(1, Math.floor(visibleCandles.length / 12))
                 if (i % step !== 0) return null
@@ -304,7 +305,6 @@ export function CandleChart({ className }: { className?: string }) {
                 )
               })}
 
-              {/* Candles */}
               {visibleCandles.map((candle, i) => {
                 const x = PAD.left + i * gap + gap / 2
                 const isGreen = candle.close >= candle.open
@@ -325,7 +325,6 @@ export function CandleChart({ className }: { className?: string }) {
                 )
               })}
 
-              {/* Crosshair */}
               {hoverIdx !== null && hoverIdx < visibleCandles.length && (
                 <g>
                   <line x1={PAD.left + hoverIdx * gap + gap / 2} y1={PAD.top} x2={PAD.left + hoverIdx * gap + gap / 2} y2={H - PAD.bottom} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
@@ -333,7 +332,6 @@ export function CandleChart({ className }: { className?: string }) {
               )}
             </svg>
 
-            {/* Tooltip */}
             {hoverIdx !== null && hoverIdx < visibleCandles.length && (
               <div
                 className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm"
