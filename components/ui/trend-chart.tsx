@@ -56,16 +56,29 @@ export function TrendChart() {
   }, [])
 
   // Capturar wheel con passive:false para evitar scroll de pagina
+  const zoomRef = useRef({ viewStart, viewEnd, totalLen: 0 })
+  zoomRef.current = { viewStart, viewEnd, totalLen: allData.length }
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const handler = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      const { viewStart: vs, viewEnd: ve, totalLen } = zoomRef.current
+      const current = ve - vs
+      if (current < 3) return
+      const step = Math.max(1, Math.floor(current * 0.15))
+      const center = Math.floor((vs + ve) / 2)
+      const newLen = Math.max(5, current + (e.deltaY > 0 ? step : -step))
+      const ns = Math.max(0, center - Math.floor(newLen / 2))
+      const ne = Math.min(totalLen, center + Math.ceil(newLen / 2))
+      setViewStart(ns)
+      setViewEnd(ne)
     }
     el.addEventListener("wheel", handler, { passive: false })
     return () => el.removeEventListener("wheel", handler)
-  }, [])
+  }, [allData.length])
 
   const allData = useMemo((): ChartDataPoint[] => {
     return history.map((item: any) => ({
@@ -101,22 +114,6 @@ export function TrendChart() {
   const firstPrice = chartData.length > 0 ? chartData[0].avg : null
   const priceChange = latestPrice && firstPrice ? latestPrice - firstPrice : null
   const priceChangePercent = latestPrice && firstPrice && firstPrice > 0 ? ((latestPrice - firstPrice) / firstPrice) * 100 : null
-
-  const zoom = useCallback((direction: -1 | 1) => {
-    const current = viewEnd - viewStart
-    const step = Math.max(1, Math.floor(current * 0.15))
-    const center = Math.floor((viewStart + viewEnd) / 2)
-    const newLen = Math.max(5, current + (direction === -1 ? step : -step))
-    setViewStart(Math.max(0, center - Math.floor(newLen / 2)))
-    setViewEnd(Math.min(allData.length, center + Math.ceil(newLen / 2)))
-  }, [viewStart, viewEnd, allData.length])
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.deltaY < 0) zoom(-1)
-    else if (e.deltaY > 0) zoom(1)
-  }, [zoom])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true
@@ -202,7 +199,6 @@ export function TrendChart() {
           ref={containerRef}
           className="relative rounded-lg border bg-card overflow-hidden"
           style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
-          onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove as any}
           onMouseUp={handleMouseUp}

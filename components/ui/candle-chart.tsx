@@ -50,16 +50,29 @@ export function CandleChart({ className }: { className?: string }) {
   const isDragging = useRef(false)
   const lastMouseX = useRef(0)
 
+  const zoomRef = useRef({ viewStart, viewEnd, candlesLen: 0 })
+  zoomRef.current = { viewStart, viewEnd, candlesLen: candles.length }
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const handler = (e: WheelEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      const { viewStart: vs, viewEnd: ve, candlesLen } = zoomRef.current
+      const current = ve - vs
+      if (current < 3) return
+      const step = Math.max(1, Math.floor(current * 0.15))
+      const center = Math.floor((vs + ve) / 2)
+      const newLen = Math.max(5, current + (e.deltaY > 0 ? step : -step))
+      const ns = Math.max(0, center - Math.floor(newLen / 2))
+      const ne = Math.min(candlesLen, center + Math.ceil(newLen / 2))
+      setViewStart(ns)
+      setViewEnd(ne)
     }
     el.addEventListener("wheel", handler, { passive: false })
     return () => el.removeEventListener("wheel", handler)
-  }, [])
+  }, [candles.length])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -121,22 +134,6 @@ export function CandleChart({ className }: { className?: string }) {
 
   const gap = chartW / (visibleCandles.length || 1)
   const candleW = Math.max(Math.floor(gap * 0.6), 3)
-
-  const zoom = useCallback((direction: -1 | 1) => {
-    const current = viewEnd - viewStart
-    const step = Math.max(1, Math.floor(current * 0.15))
-    const center = Math.floor((viewStart + viewEnd) / 2)
-    const newLen = Math.max(5, current + (direction === -1 ? step : -step))
-    setViewStart(Math.max(0, center - Math.floor(newLen / 2)))
-    setViewEnd(Math.min(candles.length, center + Math.ceil(newLen / 2)))
-  }, [viewStart, viewEnd, candles.length])
-
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.deltaY < 0) zoom(-1)
-    else if (e.deltaY > 0) zoom(1)
-  }, [zoom])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true
@@ -276,7 +273,6 @@ export function CandleChart({ className }: { className?: string }) {
             ref={containerRef}
             className="relative rounded-lg border bg-card overflow-hidden"
             style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
-            onWheel={handleWheel}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
