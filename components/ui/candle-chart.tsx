@@ -122,23 +122,20 @@ export function CandleChart({ className }: { className?: string }) {
   const gap = chartW / (visibleCandles.length || 1)
   const candleW = Math.max(Math.floor(gap * 0.6), 3)
 
-  const zoom = useCallback((delta: number) => {
+  const zoom = useCallback((direction: -1 | 1) => {
     const current = viewEnd - viewStart
-    const change = Math.max(2, Math.floor(current * Math.abs(delta) * 0.15))
+    const step = Math.max(1, Math.floor(current * 0.15))
     const center = Math.floor((viewStart + viewEnd) / 2)
-    if (delta > 0) {
-      setViewStart(Math.max(0, center - change))
-      setViewEnd(Math.min(candles.length, center + change))
-    } else {
-      setViewStart(Math.max(0, center - change * 2))
-      setViewEnd(Math.min(candles.length, center + change * 2))
-    }
+    const newLen = Math.max(5, current + (direction === -1 ? step : -step))
+    setViewStart(Math.max(0, center - Math.floor(newLen / 2)))
+    setViewEnd(Math.min(candles.length, center + Math.ceil(newLen / 2)))
   }, [viewStart, viewEnd, candles.length])
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    zoom(e.deltaY < 0 ? 1 : -1)
+    if (e.deltaY < 0) zoom(-1)
+    else if (e.deltaY > 0) zoom(1)
   }, [zoom])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
