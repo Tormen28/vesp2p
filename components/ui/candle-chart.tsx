@@ -46,8 +46,20 @@ export function CandleChart({ className }: { className?: string }) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
   const svgRef = useRef<SVGSVGElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
   const lastMouseX = useRef(0)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const handler = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    el.addEventListener("wheel", handler, { passive: false })
+    return () => el.removeEventListener("wheel", handler)
+  }, [])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -264,6 +276,7 @@ export function CandleChart({ className }: { className?: string }) {
           </div>
         ) : (
           <div
+            ref={containerRef}
             className="relative rounded-lg border bg-card overflow-hidden"
             style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
             onWheel={handleWheel}
