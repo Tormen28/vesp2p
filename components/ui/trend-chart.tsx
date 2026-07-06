@@ -17,8 +17,8 @@ import { TrendingUp } from "lucide-react"
 
 interface SnapshotRow {
   time: number
-  buyprice: number
-  sellprice: number
+  buyPrice: number
+  sellPrice: number
   spread: number
 }
 
@@ -29,13 +29,10 @@ interface ChartDataPoint {
   bestAsk: number
 }
 
-interface TrendChartProps {
-  isLoading?: boolean
-}
-
-export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
+export function TrendChart() {
   const [history, setHistory] = useState<SnapshotRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -44,37 +41,42 @@ export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
       .then((data) => {
         if (data.success && data.data) {
           setHistory(data.data)
+        } else {
+          setError("No data")
         }
         setIsLoading(false)
       })
       .catch((err) => {
-        if (err.name !== "AbortError") setIsLoading(false)
+        if (err.name !== "AbortError") {
+          setError(err.message)
+          setIsLoading(false)
+        }
       })
     return () => controller.abort()
   }, [])
 
   const chartData = useMemo((): ChartDataPoint[] => {
-    return history.map((item) => ({
+    return history.map((item: any) => ({
       time: new Date(item.time * 1000).toLocaleTimeString("es-VE", {
         hour: "2-digit",
         minute: "2-digit",
       }),
-      avg: (item.buyprice + item.sellprice) / 2,
-      bestBid: item.sellprice,
-      bestAsk: item.buyprice,
+      avg: ((item.buyPrice ?? item.buyprice) + (item.sellPrice ?? item.sellprice)) / 2,
+      bestBid: item.sellPrice ?? item.sellprice ?? 0,
+      bestAsk: item.buyPrice ?? item.buyprice ?? 0,
     }))
   }, [history])
 
   const minPrice = useMemo(() => {
     if (chartData.length === 0) return 0
-    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg])
-    return Math.min(...allPrices) * 0.995
+    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
+    return allPrices.length > 0 ? Math.min(...allPrices) * 0.995 : 0
   }, [chartData])
 
   const maxPrice = useMemo(() => {
     if (chartData.length === 0) return 0
-    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg])
-    return Math.max(...allPrices) * 1.005
+    const allPrices = chartData.flatMap((d) => [d.bestBid, d.bestAsk, d.avg]).filter((p) => p > 0)
+    return allPrices.length > 0 ? Math.max(...allPrices) * 1.005 : 0
   }, [chartData])
 
   const latestPrice = chartData.length > 0 ? chartData[chartData.length - 1].avg : null
@@ -84,20 +86,35 @@ export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
     ? ((latestPrice - firstPrice) / firstPrice) * 100
     : null
 
-  const showLoading = isLoading || externalLoading
-
-  if (showLoading && chartData.length === 0) {
+  if (isLoading && chartData.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Tendencia
+            Tendencia USDT/VES
           </CardTitle>
-          <CardDescription>Cargando historial...</CardDescription>
         </CardHeader>
         <CardContent>
           <Skeleton className="h-[300px] w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error && chartData.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Tendencia USDT/VES
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[300px] flex items-center justify-center text-red-500">
+            Error: {error}
+          </div>
         </CardContent>
       </Card>
     )
@@ -109,13 +126,13 @@ export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <TrendingUp className="h-5 w-5" />
-            Tendencia
+            Tendencia USDT/VES
           </CardTitle>
           <CardDescription>Esperando datos...</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-            <p>Recopilando datos... ({chartData.length}/{2} lecturas)</p>
+            <p>Recopilando datos... ({chartData.length} lecturas)</p>
           </div>
         </CardContent>
       </Card>
@@ -169,16 +186,17 @@ export function TrendChart({ isLoading: externalLoading }: TrendChartProps) {
               <XAxis
                 dataKey="time"
                 stroke="#9ca3af"
-                fontSize={12}
+                fontSize={11}
                 tickLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
                 stroke="#9ca3af"
-                fontSize={12}
+                fontSize={11}
                 tickLine={false}
                 domain={[minPrice, maxPrice]}
                 tickFormatter={(value) => value.toFixed(0)}
+                width={60}
               />
               <Tooltip
                 contentStyle={{
