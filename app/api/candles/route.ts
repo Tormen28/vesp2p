@@ -70,7 +70,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const timeframe = searchParams.get("timeframe") || "1h"
     const parsedLimit = parseInt(searchParams.get("limit") || "100")
-    const limit = Number.isFinite(parsedLimit) ? Math.min(parsedLimit, 1000) : 100
+    const limit = Number.isFinite(parsedLimit) ? Math.min(parsedLimit, 8000) : 100
 
     if (!TIMEFRAME_MS[timeframe]) {
       return NextResponse.json(

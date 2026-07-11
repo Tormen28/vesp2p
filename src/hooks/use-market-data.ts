@@ -96,7 +96,7 @@ interface UseHistoryDataResult {
   refresh: () => void
 }
 
-export function useHistoryData(limit: number = 1000): UseHistoryDataResult {
+export function useHistoryData(limit: number = 8000): UseHistoryDataResult {
   const [data, setData] = useState<ChartSnapshot[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

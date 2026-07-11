@@ -70,7 +70,7 @@ export class ScraperService {
     return { success: true, ...snapshot, timestamp }
   }
 
-  static async getHistory(limit: number = 1000): Promise<MarketSnapshotRow[]> {
+  static async getHistory(limit: number = 8000): Promise<MarketSnapshotRow[]> {
     const rows = await supabaseRest<MarketSnapshotRow[]>("marketsnapshot", {
       method: "GET",
       query: {
