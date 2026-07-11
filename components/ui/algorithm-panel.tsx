@@ -74,89 +74,103 @@ export function AlgorithmPanel({ metrics, isLoading }: AlgorithmPanelProps) {
   const [analysisError, setAnalysisError] = useState<string | null>(null)
   const [dataError, setDataError] = useState<string | null>(null)
 
-  // Fetch candle data for RSI/MA analysis
+  // Fetch candle data for RSI/MA analysis (auto-refresh every 60s)
   useEffect(() => {
-    const controller = new AbortController()
+    let controller = new AbortController()
 
-    fetch("/api/candles?timeframe=1h&limit=50", { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((data: { candles: Candle[] }) => {
-        const closes = data.candles.map((c) => c.close)
-        const rsi = calculateRSI(closes, 14)
-        const ma5 = calculateMA(closes, 5)
-        const ma20 = calculateMA(closes, 20)
-        let scenario = "Lateral"
-        if (rsi > 70 && ma5 > ma20) scenario = "Posible correccion bajista (Sobrecompra)"
-        else if (rsi < 30 && ma5 < ma20) scenario = "Posible rebote alcista (Sobreventa)"
-        else if (ma5 > ma20) scenario = "Tendencia Alcista"
-        else if (ma5 < ma20) scenario = "Tendencia Bajista"
+    const fetchData = () => {
+      controller.abort()
+      controller = new AbortController()
 
-        setAnalysis({ rsi, ma5, ma20, scenario })
-        setAnalysisError(null)
-      })
-      .catch((err) => {
-        if (err.name !== "AbortError") {
-          setAnalysisError("No se pudo cargar el analisis tecnico")
-        }
-      })
+      fetch("/api/candles?timeframe=1h&limit=50", { signal: controller.signal })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
+        })
+        .then((data: { candles: Candle[] }) => {
+          const closes = data.candles.map((c) => c.close)
+          const rsi = calculateRSI(closes, 14)
+          const ma5 = calculateMA(closes, 5)
+          const ma20 = calculateMA(closes, 20)
+          let scenario = "Lateral"
+          if (rsi > 70 && ma5 > ma20) scenario = "Posible correccion bajista (Sobrecompra)"
+          else if (rsi < 30 && ma5 < ma20) scenario = "Posible rebote alcista (Sobreventa)"
+          else if (ma5 > ma20) scenario = "Tendencia Alcista"
+          else if (ma5 < ma20) scenario = "Tendencia Bajista"
 
-    return () => controller.abort()
+          setAnalysis({ rsi, ma5, ma20, scenario })
+          setAnalysisError(null)
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            setAnalysisError("No se pudo cargar el analisis tecnico")
+          }
+        })
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 60000)
+    return () => { controller.abort(); clearInterval(interval) }
   }, [])
 
-  // Fetch historical data stats
+  // Fetch historical data stats (auto-refresh every 60s)
   useEffect(() => {
-    const controller = new AbortController()
+    let controller = new AbortController()
 
-    fetch("/api/history?limit=500", { signal: controller.signal })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((data: { success: boolean; data: Array<{ time: number; buyPrice: number; sellPrice: number; spread: number }> }) => {
-        if (!data.success || !data.data || data.data.length === 0) {
-          setHistoryStats(null)
-          return
-        }
-        const rows = data.data
-        const prices = rows.flatMap((r) => [r.buyPrice, r.sellPrice]).filter((p) => p > 0)
-        const oldest = new Date(rows[0].time * 1000)
-        const newest = new Date(rows[rows.length - 1].time * 1000)
-        const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
-        const minPrice = Math.min(...prices)
-        const maxPrice = Math.max(...prices)
-        const rangeP = minPrice > 0 ? ((maxPrice - minPrice) / minPrice) * 100 : 0
+    const fetchData = () => {
+      controller.abort()
+      controller = new AbortController()
 
-        setHistoryStats({
-          totalSnapshots: rows.length,
-          oldestTime: oldest.toLocaleString("es-VE", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          newestTime: newest.toLocaleString("es-VE", {
-            day: "2-digit",
-            month: "short",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
-          avgPrice,
-          minPrice,
-          maxPrice,
-          priceRangePercent: rangeP,
+      fetch("/api/history?limit=500", { signal: controller.signal })
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          return res.json()
         })
-        setDataError(null)
-      })
-      .catch((err) => {
-        if (err.name !== "AbortError") {
-          setDataError("Error cargando historial")
-        }
-      })
+        .then((data: { success: boolean; data: Array<{ time: number; buyPrice: number; sellPrice: number; spread: number }> }) => {
+          if (!data.success || !data.data || data.data.length === 0) {
+            setHistoryStats(null)
+            return
+          }
+          const rows = data.data
+          const prices = rows.flatMap((r) => [r.buyPrice, r.sellPrice]).filter((p) => p > 0)
+          const oldest = new Date(rows[0].time * 1000)
+          const newest = new Date(rows[rows.length - 1].time * 1000)
+          const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length
+          const minPrice = Math.min(...prices)
+          const maxPrice = Math.max(...prices)
+          const rangeP = minPrice > 0 ? ((maxPrice - minPrice) / minPrice) * 100 : 0
 
-    return () => controller.abort()
+          setHistoryStats({
+            totalSnapshots: rows.length,
+            oldestTime: oldest.toLocaleString("es-VE", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            newestTime: newest.toLocaleString("es-VE", {
+              day: "2-digit",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            avgPrice,
+            minPrice,
+            maxPrice,
+            priceRangePercent: rangeP,
+          })
+          setDataError(null)
+        })
+        .catch((err) => {
+          if (err.name !== "AbortError") {
+            setDataError("Error cargando historial")
+          }
+        })
+    }
+
+    fetchData()
+    const interval = setInterval(fetchData, 60000)
+    return () => { controller.abort(); clearInterval(interval) }
   }, [])
 
   if (isLoading && !metrics) {

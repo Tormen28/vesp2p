@@ -79,11 +79,8 @@ export function CandleChart({ className }: { className?: string }) {
     return () => el.removeEventListener("wheel", handler)
   }, [candles.length])
 
-  useEffect(() => {
+  const fetchCandles = useCallback(() => {
     const controller = new AbortController()
-    setIsLoading(true)
-    setError(null)
-
     fetch(`/api/candles?timeframe=${timeframe}&limit=200`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Error cargando velas")
@@ -91,9 +88,19 @@ export function CandleChart({ className }: { className?: string }) {
       })
       .then((data) => {
         const c = data.candles || []
-        setCandles(c)
-        setViewStart(0)
-        setViewEnd(c.length)
+        setCandles((prev) => {
+          if (prev.length > 0) {
+            const ratio = viewEnd - viewStart > 0 ? (viewEnd - viewStart) / prev.length : 1
+            const newViewLen = Math.max(5, Math.round(ratio * c.length))
+            const newStart = Math.max(0, Math.round((viewStart / prev.length) * c.length))
+            setViewStart(newStart)
+            setViewEnd(Math.min(c.length, newStart + newViewLen))
+          } else {
+            setViewStart(0)
+            setViewEnd(c.length)
+          }
+          return c
+        })
         setIsLoading(false)
       })
       .catch((err) => {
@@ -102,9 +109,16 @@ export function CandleChart({ className }: { className?: string }) {
           setIsLoading(false)
         }
       })
+    return controller
+  }, [timeframe, viewStart, viewEnd])
 
-    return () => controller.abort()
-  }, [timeframe])
+  useEffect(() => {
+    setIsLoading(true)
+    setError(null)
+    const controller = fetchCandles()
+    const interval = setInterval(fetchCandles, 60000)
+    return () => { controller.abort(); clearInterval(interval) }
+  }, [fetchCandles])
 
   const visibleCandles = useMemo(() => {
     return candles.slice(Math.max(0, viewStart), viewEnd)

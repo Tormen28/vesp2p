@@ -33,14 +33,25 @@ export function TrendChart() {
   const isDragging = useRef(false)
   const lastMouseX = useRef(0)
 
-  useEffect(() => {
+  const fetchData = useCallback(() => {
     const controller = new AbortController()
     fetch("/api/history?limit=500", { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.data) {
-          setHistory(data.data)
-          setViewEnd(data.data.length)
+          setHistory((prev) => {
+            if (prev.length > 0) {
+              const ratio = viewEnd - viewStart > 0 ? (viewEnd - viewStart) / prev.length : 1
+              const newLen = data.data.length
+              const newViewLen = Math.max(5, Math.round(ratio * newLen))
+              const newStart = Math.max(0, Math.round((viewStart / prev.length) * newLen))
+              setViewStart(newStart)
+              setViewEnd(Math.min(newLen, newStart + newViewLen))
+            } else {
+              setViewEnd(data.data.length)
+            }
+            return data.data
+          })
         } else {
           setError("No data")
         }
@@ -52,8 +63,14 @@ export function TrendChart() {
           setIsLoading(false)
         }
       })
-    return () => controller.abort()
-  }, [])
+    return controller
+  }, [viewStart, viewEnd])
+
+  useEffect(() => {
+    const controller = fetchData()
+    const interval = setInterval(fetchData, 60000)
+    return () => { controller.abort(); clearInterval(interval) }
+  }, [fetchData])
 
   const allData = useMemo((): ChartDataPoint[] => {
     return history.map((item: any) => ({
