@@ -71,14 +71,27 @@ export class ScraperService {
   }
 
   static async getHistory(limit: number = 8000): Promise<MarketSnapshotRow[]> {
-    const rows = await supabaseRest<MarketSnapshotRow[]>("marketsnapshot", {
-      method: "GET",
-      query: {
-        select: "*",
-        order: "timestamp.asc",
-        limit: String(limit),
-      },
-    })
-    return rows ?? []
+    const BATCH_SIZE = 1000
+    const allRows: MarketSnapshotRow[] = []
+    let offset = 0
+
+    while (offset < limit) {
+      const batchSize = Math.min(BATCH_SIZE, limit - offset)
+      const rows = await supabaseRest<MarketSnapshotRow[]>("marketsnapshot", {
+        method: "GET",
+        query: {
+          select: "*",
+          order: "timestamp.asc",
+          limit: String(batchSize),
+          offset: String(offset),
+        },
+      })
+      if (!rows || rows.length === 0) break
+      allRows.push(...rows)
+      if (rows.length < batchSize) break
+      offset += batchSize
+    }
+
+    return allRows
   }
 }
