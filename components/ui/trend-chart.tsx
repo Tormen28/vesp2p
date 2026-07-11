@@ -20,6 +20,15 @@ interface ChartDataPoint {
   bestAsk: number
 }
 
+function formatTooltipTime(epoch: number): string {
+  const d = new Date(epoch * 1000)
+  const now = new Date()
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })
+  }
+  return d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
+}
+
 export function TrendChart() {
   const [history, setHistory] = useState<SnapshotRow[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -28,6 +37,7 @@ export function TrendChart() {
   const [viewEnd, setViewEnd] = useState(0)
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [isDraggingState, setIsDraggingState] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -138,6 +148,7 @@ export function TrendChart() {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true
+    setIsDraggingState(true)
     lastMouseX.current = e.clientX
   }, [])
 
@@ -170,8 +181,16 @@ export function TrendChart() {
     else setHoverIdx(null)
   }, [viewStart, viewEnd, chartData.length, allData.length, chartW])
 
-  const handleMouseUp = useCallback(() => { isDragging.current = false }, [])
-  const handleMouseLeave = useCallback(() => { isDragging.current = false; setHoverIdx(null) }, [])
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false
+    setIsDraggingState(false)
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    isDragging.current = false
+    setIsDraggingState(false)
+    setHoverIdx(null)
+  }, [])
 
   const gridLines = 6
   const gridPrices = Array.from({ length: gridLines }, (_, i) => minPrice + (i / (gridLines - 1)) * (maxPrice - minPrice))
@@ -218,13 +237,19 @@ export function TrendChart() {
         <div
           ref={containerRef}
           className="relative rounded-lg border bg-card overflow-hidden"
-          style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
+          style={{ cursor: isDraggingState ? "grabbing" : "crosshair" }}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove as any}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
         >
           <svg ref={svgRef} viewBox={`0 0 ${W} ${H}`} className="w-full select-none" style={{ height: 350 }}>
+            <defs>
+              <linearGradient id="avgGradient" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.15" />
+                <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+              </linearGradient>
+            </defs>
             {gridPrices.map((price, i) => (
               <g key={i}>
                 <line x1={PAD.left} y1={scaleY(price)} x2={W - PAD.right} y2={scaleY(price)} stroke="#374151" strokeDasharray="3 3" strokeWidth={0.5} />
@@ -238,9 +263,14 @@ export function TrendChart() {
             })}
             {chartData.length > 1 && (
               <>
-                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestBid)}`).join(" ")} fill="none" stroke="#22c55e" strokeWidth={2} />
-                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestAsk)}`).join(" ")} fill="none" stroke="#ef4444" strokeWidth={2} />
-                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")} fill="none" stroke="#6366f1" strokeWidth={2} />
+                <polyline
+                  points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")}
+                  fill="url(#avgGradient)"
+                  stroke="none"
+                />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestBid)}`).join(" ")} fill="none" stroke="#22c55e" strokeWidth={1.5} />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.bestAsk)}`).join(" ")} fill="none" stroke="#ef4444" strokeWidth={1.5} />
+                <polyline points={chartData.map((d, i) => `${scaleX(i)},${scaleY(d.avg)}`).join(" ")} fill="none" stroke="#6366f1" strokeWidth={2} strokeDasharray="4 2" />
               </>
             )}
             {hoverIdx !== null && hoverIdx < chartData.length && (
@@ -253,22 +283,32 @@ export function TrendChart() {
               </g>
             )}
           </svg>
-          {hoverIdx !== null && hoverIdx < chartData.length && (
-            <div className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm" style={{ left: Math.min(mousePos.x + 15, W - 200), top: Math.max(mousePos.y - 100, 10) }}>
-              <div className="text-gray-400 text-xs mb-1">{chartData[hoverIdx].time}</div>
-              <div className="space-y-1">
-                <div className="flex justify-between gap-4"><span className="text-green-400">Compra:</span><span className="font-mono text-green-400">{chartData[hoverIdx].bestBid.toFixed(2)}</span></div>
-                <div className="flex justify-between gap-4"><span className="text-red-400">Venta:</span><span className="font-mono text-red-400">{chartData[hoverIdx].bestAsk.toFixed(2)}</span></div>
-                <div className="flex justify-between gap-4"><span className="text-indigo-400">Promedio:</span><span className="font-mono text-indigo-400">{chartData[hoverIdx].avg.toFixed(2)}</span></div>
+{hoverIdx !== null && hoverIdx < chartData.length && (
+              <div
+                className="absolute z-50 pointer-events-none bg-popover/95 border rounded-lg p-3 shadow-xl text-xs backdrop-blur-sm"
+                style={{ left: Math.min(mousePos.x + 15, (containerRef.current?.clientWidth ?? W) - 180), top: Math.max(mousePos.y - 120, 10) }}
+              >
+                <div className="text-muted-foreground mb-1.5 text-[10px]">
+                  {formatTooltipTime(chartData[hoverIdx].timestamp)}
+                </div>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  <span className="text-muted-foreground">Compra</span>
+                  <span className="font-mono text-right text-green-500">{chartData[hoverIdx].bestBid.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Venta</span>
+                  <span className="font-mono text-right text-red-500">{chartData[hoverIdx].bestAsk.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Prom</span>
+                  <span className="font-mono text-right text-indigo-500">{chartData[hoverIdx].avg.toFixed(2)}</span>
+                  <span className="text-muted-foreground">Spread</span>
+                  <span className="font-mono text-right text-amber-500">{((chartData[hoverIdx].bestAsk - chartData[hoverIdx].bestBid) / chartData[hoverIdx].bestAsk * 100).toFixed(2)}%</span>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center justify-center gap-6 mt-3 text-sm text-muted-foreground">
+            )}
+          </div>
+          <div className="flex items-center justify-center gap-6 mt-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-500" /><span>Mejor Compra</span></div>
           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" /><span>Mejor Venta</span></div>
           <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-indigo-500" /><span>Promedio</span></div>
-          <span className="text-xs text-muted-foreground ml-2">Scroll=zoom | Arrastrar=mover</span>
+          <span className="text-xs text-muted-foreground ml-2">Scroll=zoom | Arrastra para navegar</span>
         </div>
       </CardContent>
     </Card>

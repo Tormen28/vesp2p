@@ -82,7 +82,7 @@ export function AlgorithmPanel({ metrics, isLoading }: AlgorithmPanelProps) {
       controller.abort()
       controller = new AbortController()
 
-      fetch("/api/candles?timeframe=1h&limit=50", { signal: controller.signal })
+      fetch("/api/candles?timeframe=1h&limit=8000", { signal: controller.signal })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return res.json()

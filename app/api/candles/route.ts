@@ -119,14 +119,11 @@ export async function GET(request: Request) {
       }
 
       const rows: MarketSnapshotRow[] = await response.json()
-      console.log(`[candles] Batch offset=${offset}, got ${rows.length} rows`)
       if (!rows || rows.length === 0) break
       allRows.push(...rows)
       if (rows.length < batchSize) break
       offset += batchSize
     }
-
-    console.log(`[candles] Total rows: ${allRows.length}`)
 
     if (allRows.length === 0) {
       return NextResponse.json({ candles: [], timeframe, limit })

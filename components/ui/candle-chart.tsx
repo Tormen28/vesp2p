@@ -30,10 +30,15 @@ const TIMEFRAMES = [
 
 function formatTime(timestamp: string, tf: string): string {
   const d = new Date(timestamp)
-  if (["24h", "8h"].includes(tf)) {
+  if (["24h", "8h", "4h"].includes(tf)) {
     return d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" })
   }
   return d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatDate(timestamp: string): string {
+  const d = new Date(timestamp)
+  return d.toLocaleDateString("es-VE", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
 }
 
 export function CandleChart({ className }: { className?: string }) {
@@ -45,6 +50,7 @@ export function CandleChart({ className }: { className?: string }) {
   const [viewEnd, setViewEnd] = useState(0)
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 })
+  const [isDraggingState, setIsDraggingState] = useState(false)
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
@@ -156,6 +162,7 @@ export function CandleChart({ className }: { className?: string }) {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isDragging.current = true
+    setIsDraggingState(true)
     lastMouseX.current = e.clientX
     e.preventDefault()
   }, [])
@@ -194,10 +201,12 @@ export function CandleChart({ className }: { className?: string }) {
 
   const handleMouseUp = useCallback(() => {
     isDragging.current = false
+    setIsDraggingState(false)
   }, [])
 
   const handleMouseLeave = useCallback(() => {
     isDragging.current = false
+    setIsDraggingState(false)
     setHoverIdx(null)
   }, [])
 
@@ -289,7 +298,7 @@ export function CandleChart({ className }: { className?: string }) {
           <div
             ref={containerRef}
             className="relative rounded-lg border bg-card overflow-hidden"
-            style={{ cursor: isDragging.current ? "grabbing" : "crosshair" }}
+            style={{ cursor: isDraggingState ? "grabbing" : "crosshair" }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
@@ -341,6 +350,7 @@ export function CandleChart({ className }: { className?: string }) {
 
               {hoverIdx !== null && hoverIdx < visibleCandles.length && (
                 <g>
+                  <line x1={PAD.left} y1={scaleY(visibleCandles[hoverIdx].close)} x2={W - PAD.right} y2={scaleY(visibleCandles[hoverIdx].close)} stroke="#6b7280" strokeWidth={0.5} strokeDasharray="4 4" />
                   <line x1={PAD.left + hoverIdx * gap + gap / 2} y1={PAD.top} x2={PAD.left + hoverIdx * gap + gap / 2} y2={H - PAD.bottom} stroke="#6b7280" strokeWidth={1} strokeDasharray="4 4" />
                 </g>
               )}
@@ -348,24 +358,24 @@ export function CandleChart({ className }: { className?: string }) {
 
             {hoverIdx !== null && hoverIdx < visibleCandles.length && (
               <div
-                className="absolute z-50 pointer-events-none bg-gray-900/95 border border-gray-700 rounded-lg p-3 shadow-xl text-sm"
+                className="absolute z-50 pointer-events-none bg-popover/95 border rounded-lg p-3 shadow-xl text-xs backdrop-blur-sm"
                 style={{
-                  left: Math.min(mousePos.x + 15, W - 220),
-                  top: Math.max(mousePos.y - 140, 10),
+                  left: Math.min(mousePos.x + 15, (containerRef.current?.clientWidth ?? W) - 180),
+                  top: Math.max(mousePos.y - 120, 10),
                 }}
               >
-                <div className="text-gray-400 text-xs mb-1">
-                  {formatTime(visibleCandles[hoverIdx].time, timeframe)}
+                <div className="text-muted-foreground mb-1.5 text-[10px]">
+                  {formatDate(visibleCandles[hoverIdx].time)}
                 </div>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                  <span className="text-gray-400">Apertura:</span>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                  <span className="text-muted-foreground">O</span>
                   <span className="font-mono text-right">{visibleCandles[hoverIdx].open.toFixed(2)}</span>
-                  <span className="text-gray-400">Maxima:</span>
-                  <span className="font-mono text-right">{visibleCandles[hoverIdx].high.toFixed(2)}</span>
-                  <span className="text-gray-400">Minima:</span>
-                  <span className="font-mono text-right">{visibleCandles[hoverIdx].low.toFixed(2)}</span>
-                  <span className="text-gray-400">Cierre:</span>
-                  <span className={cn("font-mono text-right font-bold", visibleCandles[hoverIdx].close >= visibleCandles[hoverIdx].open ? "text-green-400" : "text-red-400")}>
+                  <span className="text-muted-foreground">H</span>
+                  <span className="font-mono text-right text-green-500">{visibleCandles[hoverIdx].high.toFixed(2)}</span>
+                  <span className="text-muted-foreground">L</span>
+                  <span className="font-mono text-right text-red-500">{visibleCandles[hoverIdx].low.toFixed(2)}</span>
+                  <span className="text-muted-foreground">C</span>
+                  <span className={cn("font-mono text-right font-bold", visibleCandles[hoverIdx].close >= visibleCandles[hoverIdx].open ? "text-green-500" : "text-red-500")}>
                     {visibleCandles[hoverIdx].close.toFixed(2)}
                   </span>
                 </div>
@@ -374,17 +384,19 @@ export function CandleChart({ className }: { className?: string }) {
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-6 mt-3 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500" />
-            <span>Alcista</span>
+        <div className="flex items-center justify-between gap-2 mt-3 text-xs text-muted-foreground px-1">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm bg-green-500" />
+              <span>Alcista</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm bg-red-500" />
+              <span>Bajista</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span>Bajista</span>
-          </div>
-          <span className="text-xs text-muted-foreground ml-2">
-            Scroll=zoom | Arrastrar=mover
+          <span className="text-[10px] text-muted-foreground/70">
+            Rueda para zoom · Arrastra para navegar
           </span>
         </div>
       </CardContent>
