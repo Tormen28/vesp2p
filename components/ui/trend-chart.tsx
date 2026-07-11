@@ -35,7 +35,7 @@ export function TrendChart() {
 
   const fetchData = useCallback(() => {
     const controller = new AbortController()
-    fetch("/api/history?limit=5000", { signal: controller.signal })
+    fetch("/api/history?limit=8000", { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
         if (data.success && data.data) {
