@@ -97,7 +97,7 @@ async function fetchBinance(tradeType: "SELL" | "BUY"): Promise<BinanceAd[]> {
 // ── Supabase REST upsert ────────────────────────────────────────────
 
 async function upsertSnapshot(payload: Record<string, unknown>) {
-  const url = `${SUPABASE_URL}/rest/v1/MarketSnapshot?on_conflict=timestamp`
+  const url = `${SUPABASE_URL}/rest/v1/marketsnapshot?on_conflict=timestamp`
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -127,7 +127,6 @@ async function main() {
   console.log("[scraper] Starting P2P snapshot...")
   const start = Date.now()
 
-  // Fetch SELL + BUY in parallel
   const [sellAds, buyAds] = await Promise.all([fetchBinance("SELL"), fetchBinance("BUY")])
   console.log(`[scraper] Fetched ${sellAds.length} SELL, ${buyAds.length} BUY ads`)
 
@@ -135,11 +134,9 @@ async function main() {
     throw new Error("No ads returned from Binance — API may be blocked")
   }
 
-  // Extract prices
   const sellPrices = sellAds.map((a) => a.price).filter((p) => p > 0)
   const buyPrices = buyAds.map((a) => a.price).filter((p) => p > 0)
 
-  // Clean with IQR
   const sellStats = cleanPrices(sellPrices.length > 0 ? sellPrices : [0])
   const buyStats = cleanPrices(buyPrices.length > 0 ? buyPrices : [0])
 
