@@ -9,7 +9,8 @@
     "start": "next start",
     "scraper": "tsx scripts/scraper.ts",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "build:cf": "next build && opennextjs-cloudflare build",
+    "deploy": "npm run build:cf && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
   },
   "pnpm": {
