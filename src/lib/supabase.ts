@@ -50,6 +50,14 @@ export async function supabaseRest<T = unknown>(
   }
   if (prefer) headers.Prefer = prefer
 
+  // Add Range header for large limit requests (Supabase defaults to 1000 rows)
+  if (query?.limit) {
+    const limitNum = parseInt(query.limit)
+    if (limitNum > 1000) {
+      headers.Range = `0-${limitNum - 1}`
+    }
+  }
+
   const response = await fetch(url.toString(), {
     method,
     headers,
