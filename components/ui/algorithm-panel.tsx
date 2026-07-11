@@ -121,7 +121,7 @@ export function AlgorithmPanel({ metrics, isLoading }: AlgorithmPanelProps) {
       controller.abort()
       controller = new AbortController()
 
-      fetch("/api/history?limit=500", { signal: controller.signal })
+      fetch("/api/history?limit=5000", { signal: controller.signal })
         .then((res) => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`)
           return res.json()
