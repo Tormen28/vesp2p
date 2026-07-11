@@ -69,8 +69,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const timeframe = searchParams.get("timeframe") || "1h"
-    const parsedLimit = parseInt(searchParams.get("limit") || "100")
-    const limit = Number.isFinite(parsedLimit) ? Math.min(parsedLimit, 8000) : 100
+    const parsedLimit = parseInt(searchParams.get("limit") || "8000")
+    const limit = Number.isFinite(parsedLimit) ? Math.min(parsedLimit, 10000) : 8000
 
     if (!TIMEFRAME_MS[timeframe]) {
       return NextResponse.json(
@@ -90,35 +90,46 @@ export async function GET(request: Request) {
       )
     }
 
-    const url = new URL(`${SUPABASE_URL}/rest/v1/marketsnapshot`)
-    url.searchParams.set("select", "timestamp,buyprice")
-    url.searchParams.set("order", "timestamp.asc")
-    url.searchParams.set("limit", String(limit))
+    const BATCH_SIZE = 1000
+    const allRows: MarketSnapshotRow[] = []
+    let offset = 0
 
-    const response = await fetch(url.toString(), {
-      method: "GET",
-      headers: {
-        apikey: SUPABASE_SECRET_KEY,
-        Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
-        "Content-Type": "application/json",
-        Range: `0-${limit - 1}`,
-      },
-      cache: "no-store",
-      signal: AbortSignal.timeout(15000),
-    })
+    while (offset < limit) {
+      const batchSize = Math.min(BATCH_SIZE, limit - offset)
+      const url = new URL(`${SUPABASE_URL}/rest/v1/marketsnapshot`)
+      url.searchParams.set("select", "timestamp,buyprice")
+      url.searchParams.set("order", "timestamp.asc")
+      url.searchParams.set("limit", String(batchSize))
+      url.searchParams.set("offset", String(offset))
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "")
-      throw new Error(`Supabase REST error ${response.status}: ${errorText}`)
+      const response = await fetch(url.toString(), {
+        method: "GET",
+        headers: {
+          apikey: SUPABASE_SECRET_KEY,
+          Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "")
+        throw new Error(`Supabase REST error ${response.status}: ${errorText}`)
+      }
+
+      const rows: MarketSnapshotRow[] = await response.json()
+      if (!rows || rows.length === 0) break
+      allRows.push(...rows)
+      if (rows.length < batchSize) break
+      offset += batchSize
     }
 
-    const rows: MarketSnapshotRow[] = await response.json()
-
-    if (!rows || rows.length === 0) {
+    if (allRows.length === 0) {
       return NextResponse.json({ candles: [], timeframe, limit })
     }
 
-    const candles = aggregateCandles(rows, timeframe)
+    const candles = aggregateCandles(allRows, timeframe)
 
     return NextResponse.json(
       { candles, timeframe, limit },

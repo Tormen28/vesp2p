@@ -81,7 +81,7 @@ export function CandleChart({ className }: { className?: string }) {
 
   const fetchCandles = useCallback(() => {
     const controller = new AbortController()
-    fetch(`/api/candles?timeframe=${timeframe}&limit=200`, { signal: controller.signal })
+    fetch(`/api/candles?timeframe=${timeframe}&limit=8000`, { signal: controller.signal })
       .then((res) => {
         if (!res.ok) throw new Error("Error cargando velas")
         return res.json()
